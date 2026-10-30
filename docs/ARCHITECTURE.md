@@ -1,6 +1,6 @@
 # Language and architecture proposal
 
-Status: **Decided 2026-10-30:** Rust with hidapi, licensed MIT OR Apache-2.0.
+Status: **Decided 2026-10-30:** Rust with hidapi, licensed GPL-3.0-or-later.
 The comparison below is kept as the record of why.
 
 ## Requirements that drive the choice
@@ -108,5 +108,7 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", TAG+="ua
 
 everest-mac (MIT) is compatible with anything. K2 (no licence) and
 BaseCamp-Linux (GPL-3.0 plus non-commercial clause) contribute facts only, so
-they do not constrain our choice. Chosen: **MIT OR Apache-2.0** (the Rust
-convention, widest reuse). Contributions are accepted under the same terms.
+they do not constrain our choice. Chosen: **GPL-3.0-or-later**, so that
+forks and derived tools stay open. Contributions are accepted under the same
+terms. Dependencies must be GPL-3.0-compatible (MIT, Apache-2.0, BSD, MPL-2.0,
+LGPL are fine).

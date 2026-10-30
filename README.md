@@ -48,5 +48,6 @@ No code from K2 or BaseCamp-Linux is used; see the licence notes in
 
 ## Licence
 
-Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
-[MIT](LICENSE-MIT), at your option.
+Kebnekaise is free software: you can redistribute it and/or modify it under
+the terms of the [GNU General Public License](LICENSE), version 3 or (at your
+option) any later version (`GPL-3.0-or-later`).
