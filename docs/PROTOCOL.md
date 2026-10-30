@@ -336,7 +336,7 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 ## Known unknowns (to fill by capture)
 
 1. Full `11 00` reply layout (other bytes, module firmware versions).
-2. Firmware versions other than 57: what changes. **Which firmware Markus has.**
+2. Firmware versions other than 57: what changes, and which versions are in use in the field.
 3. Nordic layout (code 11) and its legends, unverified on hardware.
 4. Whether `14 00` (profile switch) persists across replug.
 5. Meaning of the constant bytes 11..22 in the `11 14` write form.
