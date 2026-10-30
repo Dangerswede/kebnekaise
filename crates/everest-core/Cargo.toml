@@ -1,0 +1,14 @@
+[package]
+name = "everest-core"
+description = "High-level API for the Mountain Everest Max: open with firmware gate, read device information"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+everest-proto.workspace = true
+everest-hid.workspace = true
+thiserror.workspace = true
+serde.workspace = true

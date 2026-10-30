@@ -1,0 +1,25 @@
+[package]
+name = "everest-hid"
+description = "HID transport, device discovery and Base Camp detection for the Mountain Everest Max"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+everest-proto.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+
+# Pure-Rust backends: hidraw on Linux (no libudev needed at build or run
+# time), the Windows HID API on Windows. No libusb, no driver installation.
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev"] }
+
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+
+[target.'cfg(not(any(target_os = "linux", windows)))'.dependencies]
+hidapi = "2.6"

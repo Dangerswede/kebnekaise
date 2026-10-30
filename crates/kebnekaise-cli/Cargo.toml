@@ -1,0 +1,20 @@
+[package]
+name = "kebnekaise-cli"
+description = "Command-line tool for the Mountain Everest Max (Linux and Windows)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "kebnekaise"
+path = "src/main.rs"
+
+[dependencies]
+everest-proto.workspace = true
+everest-hid.workspace = true
+everest-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4.5", features = ["derive"] }

@@ -7,8 +7,49 @@ The keyboard keeps its original firmware. Kebnekaise talks to it over USB HID
 through the operating system's own HID driver, the same way Base Camp does: no
 driver installation, no firmware flashing.
 
-> **Status: early.** Phase 0 (protocol research and plan) is done. No code yet.
-> This project is not affiliated with Mountain or Listan.
+> **Status: early.** Phase 1 (read-only CLI) is in progress. Nothing writes to
+> the keyboard yet. This project is not affiliated with Mountain or Listan.
+
+## Usage
+
+```
+kebnekaise list            # HID interfaces of connected Mountain devices (opens nothing)
+kebnekaise info            # firmware, layout, modules, active profile, lighting slot
+kebnekaise info --raw      # ...plus decoded settings and the raw replies
+kebnekaise info --json     # machine-readable
+```
+
+`info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
+It refuses to run while Base Camp or another keyboard tool seems to be
+running, because two programs talking to the keyboard disturb each other.
+
+### Building
+
+Install Rust from <https://rustup.rs>, then:
+
+```
+cargo build --release      # binary in target/release/kebnekaise(.exe)
+cargo test                 # no keyboard needed
+```
+
+No system libraries are needed on Linux or Windows. CI builds both on every
+push; the binaries are attached to each run as artifacts.
+
+### Linux: access without root
+
+```
+sudo cp packaging/linux/70-mountain-everest.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=hidraw
+```
+
+Then unplug and replug the keyboard. The rule gives the logged-in user access
+to the keyboard's hidraw nodes only.
+
+### Windows
+
+Nothing to install: Kebnekaise uses Windows' built-in HID driver. Close Base
+Camp first (including the tray icon and the `BaseCampService` service).
 
 ## Documents
 
@@ -23,7 +64,7 @@ driver installation, no firmware flashing.
 | Phase | Content |
 |---|---|
 | 0 | Research and plan (done) |
-| 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. |
+| 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (in progress) |
 | 2 | RGB: static colour, brightness, per-key colours, built-in effects |
 | 3 | Display keys and dial screen: upload your own pictures |
 | 4 | Profiles and key bindings: read, write, export, import |
