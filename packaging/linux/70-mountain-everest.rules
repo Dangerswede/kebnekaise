@@ -1,0 +1,13 @@
+# Kebnekaise: let the logged-in user talk to the Mountain Everest Max
+# (USB 3282:0001) without root.
+#
+# Only the hidraw nodes of this keyboard are covered, and access goes to the
+# user at the seat (systemd-logind "uaccess"), not to everyone. The file name
+# must sort before 73-seat-late.rules for uaccess to apply.
+#
+# Install:
+#   sudo cp 70-mountain-everest.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=hidraw
+# Then unplug and replug the keyboard.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3282", ATTRS{idProduct}=="0001", TAG+="uaccess"

@@ -1,0 +1,15 @@
+[package]
+name = "everest-proto"
+description = "Packet builders and parsers for the Mountain Everest Max HID protocol (no I/O)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
