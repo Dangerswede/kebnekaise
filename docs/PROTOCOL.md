@@ -557,6 +557,27 @@ Decoded: firmware 57, profile 1, lighting slot 0 (static), layout code 11
 (Nordic), dock and numpad attached, dial mode image, dial colour `#2053a9`,
 display brightness "follow lighting" in all five slots.
 
+### 2026-11-06, first lighting write (same keyboard, Windows 11)
+
+`kebnekaise rgb static ff0000 --no-save`, then `00ff00 --brightness 20`,
+on profile 1 with the static slot already active:
+
+```
+write 14 00 00 00 01                      (switch: profile 1, slot 0)
+write 14 2c 00 00 ff 64 00 ff ff ff       (static, brightness 100, red)
+read  14 00 00 00 01
+read  14 2c 00 00 ff 64 00 ff ff ff
+read  11 00 ... 57 ... 01 00              (profile 1, slot 0)
+```
+
+- The keys turned red, then dim green. Sequence A without `13 55` and the
+  static `14 2C` layout are [W].
+- **The keyboard echoes each lighting write** back on the interrupt IN
+  endpoint, byte for byte, about 250 ms later. Readers must skip these echoes
+  (the session already does, since they do not match the awaited command).
+  Whether an echo means "applied" is [U].
+- Side strips and the state after a replug: still to be reported.
+
 ## Sources and licences
 
 | Source | Licence | How we use it |
