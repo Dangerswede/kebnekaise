@@ -8,8 +8,8 @@ through the operating system's own HID driver, the same way Base Camp does: no
 driver installation, no firmware flashing.
 
 > **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
-> (lighting): `rgb static` writes to the keyboard; the rest is a dry run
-> that prints the packets it would send. This project is not affiliated with Mountain or Listan.
+> (lighting): `rgb static` and `rgb effect` write to the keyboard; per-key
+> colours (`rgb keys`) are a dry run that prints the packets it would send. This project is not affiliated with Mountain or Listan.
 
 ## Usage
 
@@ -25,20 +25,21 @@ Lighting. These write to the keyboard:
 ```
 kebnekaise rgb static ff8000 --no-save   # RAM only; replug to undo
 kebnekaise rgb static ff8000             # saved to flash (13 55), stays after replug
+kebnekaise rgb effect wave --mode dual --color ff0000,0000ff --speed 4
+kebnekaise rgb effect breathing --color 00ffaa --no-save
+kebnekaise rgb effect reactive --color ffffff,000040
 ```
 
-Dry run (opens no device, sends nothing):
+Dry run (opens no device, sends nothing; works for every `rgb` command):
 
 ```
 kebnekaise rgb static ff8000 --brightness 60 --dry-run
-kebnekaise rgb effect wave --mode dual --color ff0000,0000ff --speed 4 --dry-run
-kebnekaise rgb effect reactive --color ffffff,000040 --dry-run
 kebnekaise rgb keys --all 101010 --key esc=ff0000 --key w=00ff00 --dry-run
 kebnekaise rgb key-names    # names accepted by --key
 ```
 
-Without `--dry-run`, every `rgb` command except `rgb static`
-refuses to run until it has been tested on real hardware.
+Without `--dry-run`, `rgb keys` refuses to run until it has been approved
+for real hardware.
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
 It refuses to run while Base Camp or another keyboard tool seems to be
