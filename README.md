@@ -8,8 +8,8 @@ through the operating system's own HID driver, the same way Base Camp does: no
 driver installation, no firmware flashing.
 
 > **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
-> (lighting): `rgb static` and `rgb effect` write to the keyboard; per-key
-> colours (`rgb keys`) are a dry run that prints the packets it would send. This project is not affiliated with Mountain or Listan.
+> (lighting): static colour, built-in effects and per-key colours.
+> This project is not affiliated with Mountain or Listan.
 
 ## Usage
 
@@ -28,18 +28,13 @@ kebnekaise rgb static ff8000             # saved to flash (13 55), stays after r
 kebnekaise rgb effect wave --mode dual --color "ff0000,0000ff" --speed 4
 kebnekaise rgb effect breathing --color 00ffaa --no-save
 kebnekaise rgb effect reactive --color "ffffff,000040"
-```
-
-Dry run (opens no device, sends nothing; works for every `rgb` command):
-
-```
-kebnekaise rgb static ff8000 --brightness 60 --dry-run
-kebnekaise rgb keys --all 101010 --key esc=ff0000 --key w=00ff00 --dry-run
+kebnekaise rgb keys --all 101010 --key esc=ff0000 --key w=00ff00   # RAM only
+kebnekaise rgb keys --all 101010 --key esc=ff0000 --save            # saved (slot 6)
 kebnekaise rgb key-names    # names accepted by --key
 ```
 
-Without `--dry-run`, `rgb keys` refuses to run until it has been approved
-for real hardware.
+Add `--dry-run` to any `rgb` command to print its packets instead (opens no
+device, sends nothing). In PowerShell, quote colour lists.
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
 It refuses to run while Base Camp or another keyboard tool seems to be
@@ -87,7 +82,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 |---|---|
 | 0 | Research and plan (done) |
 | 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows verified; Linux to test) |
-| 2 | RGB: static colour, brightness, per-key colours, built-in effects (dry run done; hardware test next) |
+| 2 | RGB: static colour, brightness, per-key colours, built-in effects (static and effects verified on Windows; per-key testing) |
 | 3 | Display keys and dial screen: upload your own pictures |
 | 4 | Profiles and key bindings: read, write, export, import |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |

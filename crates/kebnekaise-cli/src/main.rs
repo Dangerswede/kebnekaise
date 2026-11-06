@@ -1,8 +1,8 @@
 //! `kebnekaise`: command-line tool for the Mountain Everest Max.
 //!
 //! `list` enumerates HID interfaces without opening anything, `info` sends
-//! only the documented read commands. `rgb` (phase 2) only has a dry run so
-//! far: it prints the packets it would send and opens no device.
+//! only the documented read commands. `rgb` (phase 2) sets the lighting;
+//! with `--dry-run` it only prints the packets and opens no device.
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -148,7 +148,6 @@ struct EffectArgs {
 #[derive(Args)]
 struct RgbCommon {
     /// Print the packets instead of sending them (opens no device).
-    /// Required for `rgb keys`.
     #[arg(long)]
     dry_run: bool,
     /// Profile 1..5 for a dry run. A real run uses the active profile.
@@ -183,13 +182,6 @@ impl Request {
             Request::Effect(s, save) => LightingPlan::effect(profile, s, *save),
             Request::Custom(f, b, save) => LightingPlan::custom(profile, f, *b, *save),
         }
-    }
-
-    /// Real writes approved so far (all 2026-11-06): built-in effects,
-    /// static colour included, saved or not. Per-key (custom) lighting is
-    /// still dry-run only.
-    fn approved_for_hardware(&self) -> bool {
-        matches!(self, Request::Effect(..))
     }
 }
 
@@ -532,12 +524,9 @@ fn rgb(command: RgbCommand) -> CliResult {
         }
     };
 
+    // Every lighting command is approved for hardware (static colour,
+    // effects and per-key colours, all by the project owner on 2026-11-06).
     if !common.dry_run {
-        if !request.approved_for_hardware() {
-            eprintln!("error: per-key lighting (`rgb keys`) may not write to the keyboard yet.");
-            eprintln!("It has not been approved for hardware. Add --dry-run to see its packets.");
-            return Ok(ExitCode::from(4));
-        }
         return rgb_send(&request, &common);
     }
 

@@ -47,7 +47,6 @@ kebnekaise rgb static ff0000 --dry-run
 kebnekaise rgb effect wave --dry-run
 kebnekaise rgb effect breathing --mode dual --color "ff0000,0000ff" --dry-run
 kebnekaise rgb keys --all 101010 --key esc=ff0000 --dry-run
-kebnekaise rgb keys --key esc=ff0000  # must refuse with exit code 4
 ```
 
 ## Phase 2: first lighting write (approved 2026-11-06)
@@ -111,3 +110,22 @@ Then one saved effect (no `--no-save`) and a replug. Go back with
 
 Record: does each effect look right (direction, speed 1 vs 5, colours,
 background), and does `quad` (four stops, from disassembly only) work?
+
+## Phase 2: per-key colours (approved 2026-11-06)
+
+`rgb keys` sends sequence B (16 packets, see PROTOCOL.md). Without `--save`
+nothing is written to flash.
+
+```
+kebnekaise rgb keys --all 000000 --key esc=ff0000 --key w=00ff00 --key a=00ff00 --key s=00ff00 --key d=00ff00 --debug
+kebnekaise rgb keys --all 202020 --side 0000ff
+kebnekaise rgb keys --all 000000 --key iso-extra=ff0000 --key iso-hash=00ff00 --key grave=0000ff
+kebnekaise rgb keys --all 000000 --key side0=ff0000 --key side44=00ff00
+```
+
+Then unplug and replug: does the previous lighting come back? Finally try one
+with `--save` and a replug. Go back with `kebnekaise rgb static <colour>`.
+
+Record: are the right keys lit (Esc, WASD; on a Nordic board `iso-extra` is
+`<>|`, `iso-hash` is `'*`, `grave` is `§`), where are side LEDs 0 and 44,
+and does anything odd happen after the `14 A0` packets?

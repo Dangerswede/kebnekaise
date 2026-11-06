@@ -279,7 +279,8 @@ This section is the specification `everest-proto` implements for phase 2
 lighting rows of the tables above. Status on 2026-11-06: sequence A is
 enabled for hardware: static colour seen working with and without step 3
 (`rgb static`), the other built-in effects approved and seen working the same day
-(`rgb effect`). Sequence B (per-key) is a dry run only.
+(`rgb effect`). Sequence B (per-key, `rgb keys`) approved the same day,
+not yet seen.
 
 Source: everest-mac (MIT), which recovered the sequences from Base Camp
 1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board
