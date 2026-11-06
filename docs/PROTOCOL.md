@@ -279,7 +279,8 @@ This section is the specification `everest-proto` implements for phase 2
 lighting rows of the tables above. Status on 2026-11-06: sequence A is
 enabled for hardware: static colour seen working with and without step 3
 (`rgb static`), the other built-in effects approved and seen working the same day
-(`rgb effect`). Sequence B (per-key) is a dry run only.
+(`rgb effect`). Sequence B (per-key, `rgb keys`) approved and seen
+working the same day.
 
 Source: everest-mac (MIT), which recovered the sequences from Base Camp
 1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board
@@ -432,7 +433,9 @@ right 41 40 39 38. [P] for us (re-check on hardware; the order is irregular).
 
 1. ~~Does an effect sent without `13 55` survive a replug?~~ No: it is lost
    on replug (seen 2026-11-06, see Hardware observations).
-2. Does `14 00` (profile/slot switch) survive a replug?
+2. ~~Does `14 00` (profile/slot switch) survive a replug?~~ Yes: after
+   unsaved per-key colours and a replug, `info` reported the custom slot and
+   the board was white (seen 2026-11-06).
 3. Does `13 55 00 00 06` keep the per-key picture?
 4. Nordic LED positions: `iso-extra`, `iso-hash`, `grave`.
 5. Side-strip order.
@@ -594,6 +597,23 @@ the static slot to flash. [W]
 up), breathing, reactive (key + background) and off all looked as expected
 to the owner. Sequence A and the effect layouts for these are [W]. Not
 reported individually yet: tornado, matrix, yeti, wave `quad`.
+
+### 2026-11-06, per-key colours (same keyboard, Windows 11, numpad on the left)
+
+`kebnekaise rgb keys` without `--save` (sequence B without step 17):
+
+- Esc and WASD lit as addressed. On the Nordic board `iso-extra` (13) is
+  `<>|`, `iso-hash` (111) is `'*` and `grave` (1) is `§`. Key map [W].
+- Side LED 0 sits on the main board's top edge between Scroll Lock and
+  Pause; side LED 44 on the numpad's top edge above `/` (numpad attached on
+  the left). Consistent with the order under "Key LED map". [W] for 0 and 44.
+- **After unplugging and replugging, every key was white**, not the saved
+  static blue from before. So the keyboard came back in the custom slot with
+  empty/default content: the slot switch `14 00 ... 06` (or the active slot
+  in general) appears to survive a replug, while the unsaved per-key colours
+  do not. To be confirmed with `info` after a replug. Consequence: "not
+  saved" does not mean "replug restores the old lighting" when the slot
+  changes. [W]
 
 ## Sources and licences
 
