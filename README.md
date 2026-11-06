@@ -9,7 +9,7 @@ driver installation, no firmware flashing.
 
 > **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
 > (lighting): static colour, built-in effects and per-key colours.
-> Phase 3 (pictures on the display keys and the dial): dry run only.
+> Phase 3 (pictures): display-key uploads ready for their first hardware test; dial dry run only.
 > This project is not affiliated with Mountain or Listan.
 
 ## Usage
@@ -37,11 +37,12 @@ kebnekaise rgb key-names    # names accepted by --key
 Add `--dry-run` to any `rgb` command to print its packets instead (opens no
 device, sends nothing). In PowerShell, quote colour lists.
 
-Pictures (phase 3, dry run only for now). Images are converted to the
-keyboard's format (72 x 72 for D1..D4, 240 x 204 for the dial):
+Pictures (phase 3). Images are converted to the keyboard's format (72 x 72
+for D1..D4, 240 x 204 for the dial). Only `picture key` writes so far; the
+others need `--dry-run`:
 
 ```
-kebnekaise picture key 1 logo.png --dry-run --preview key1.png
+kebnekaise picture key 1 logo.png --preview key1.png   # writes D1 (~20 s)
 kebnekaise picture dial wallpaper.jpg --fit contain --dry-run
 kebnekaise picture reset-keys --keys "1,2" --dry-run
 kebnekaise picture reset-dial --dry-run

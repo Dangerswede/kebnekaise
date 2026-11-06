@@ -2,7 +2,8 @@
 
 Status: **Phase 3 draft** (2026-11-06). Read commands and all lighting
 commands are seen working by this project on Windows (tag [W]). The picture
-transfer (phase 3) is specified but has not been sent to hardware yet. Every
+transfer (phase 3) is specified; display-key uploads are approved for their
+first hardware test. Every
 entry carries a confidence tag and a source, so we can tell what we know from
 what we hope.
 
@@ -489,9 +490,9 @@ Rules:
 
 This section is the specification `everest-proto` implements for phase 3
 (`crates/everest-proto/src/pictures.rs`), and `everest-core` drives
-(`crates/everest-core/src/pictures.rs`). Status on 2026-11-06: **dry run
-only.** No picture command has been sent to real hardware by this project.
-The first real upload needs the project owner's yes.
+(`crates/everest-core/src/pictures.rs`). Status on 2026-11-06: display-key
+uploads approved by the project owner for the first hardware test (D1
+first); the dial upload and the picture resets are dry run only.
 
 Source: everest-mac (MIT), which recovered the sequence from Base Camp 1.9.10
 (`SDKDLL.dll`, `StartPicUpdate`) and verified it on a UK-ISO board with

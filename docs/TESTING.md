@@ -150,8 +150,8 @@ kebnekaise picture reset-dial --dry-run
 Record: do the previews look right (crop, colours), and do the descriptors
 match `docs/PROTOCOL.md`, "Pictures (phase 3)"?
 
-Real runs refuse with exit code 4 until the first picture write is approved.
-Plan for that test (one display key first, then the dial):
+`picture key` was approved for hardware on 2026-11-06 (D1 first). The dial
+upload and the resets still refuse with exit code 4. Plan for the test:
 
 1. Close Base Camp, replug the keyboard, `kebnekaise info`. Note the profile.
 2. `kebnekaise picture key 1 test.png --debug 2> key1-debug.txt`. Takes about

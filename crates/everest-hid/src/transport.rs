@@ -138,7 +138,21 @@ impl Transport for HidTransport {
             .device
             .get_feature_report(&mut buf)
             .map_err(|e| Error::Hid(e.to_string()))?;
-        Ok(normalise_feature(&buf, n))
+        match normalise_feature(&buf, n) {
+            Some(p) => Ok(Some(p)),
+            // An empty report is "no answer yet".
+            None if buf[..n.min(buf.len())].iter().all(|&b| b == 0) => Ok(None),
+            // Anything else means our report-ID assumption is wrong: stop
+            // and show the bytes rather than guess.
+            None => {
+                let shown = &buf[..n.min(buf.len()).min(16)];
+                let hex: Vec<String> = shown.iter().map(|b| format!("{b:02x}")).collect();
+                Err(Error::Hid(format!(
+                    "unexpected feature report ({n} bytes): {} ...",
+                    hex.join(" ")
+                )))
+            }
+        }
     }
 }
 

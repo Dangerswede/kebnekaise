@@ -2,8 +2,8 @@
 //!
 //! Every command converts and validates first. With `--dry-run` it runs the
 //! whole transfer against a simulated keyboard (nothing is opened) and
-//! prints the packets. Real runs are refused until the project owner has
-//! approved the first picture write on hardware.
+//! prints the packets. Real runs are allowed only for what the project
+//! owner has approved: display-key uploads (2026-11-06).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -20,11 +20,6 @@ use everest_hid::{HidTransport, Policy, Session, TracingTransport};
 use everest_proto::{KeyResetMask, Packet, Picture, PictureTarget};
 
 use crate::{hid_api, print_conflicts, CliResult};
-
-/// Real picture writes approved by the project owner so far: none.
-/// (Picture resets were allowed in principle on 2026-10-30, but the first
-/// hardware run of any phase 3 command still needs an explicit yes.)
-const APPROVED_FOR_HARDWARE: bool = false;
 
 #[derive(Subcommand)]
 pub enum PictureCommand {
@@ -153,6 +148,13 @@ impl Request {
         }
     }
 
+    /// Real picture writes approved by the project owner so far: uploads
+    /// to a display key (2026-11-06, D1 first). The dial upload and the
+    /// picture resets are still dry-run only.
+    fn approved_for_hardware(&self) -> bool {
+        matches!(self, Request::Key { .. })
+    }
+
     fn reset_packet(&self, profile: u8) -> Result<Option<Packet>, everest_proto::PictureError> {
         Ok(match self {
             Request::ResetDial => Some(Packet::reset_dial_picture()),
@@ -201,10 +203,10 @@ pub fn run(command: PictureCommand) -> CliResult {
     };
 
     if !common.dry_run {
-        if !APPROVED_FOR_HARDWARE {
-            eprintln!("error: picture commands may not write to the keyboard yet.");
+        if !request.approved_for_hardware() {
+            eprintln!("error: this picture command may not write to the keyboard yet.");
             eprintln!(
-                "They have not been approved for hardware. Add --dry-run to convert the \
+                "Only `picture key` is approved for hardware. Add --dry-run to convert the \
                  image and see the packets."
             );
             return Ok(ExitCode::from(4));
