@@ -202,8 +202,10 @@ impl Picture {
             });
         }
         let bytes = rgb
-            .chunks_exact(3)
-            .flat_map(|p| rgb565(p[0], p[1], p[2]))
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| rgb565(r, g, b))
             .collect();
         Self::from_rgb565(target, bytes)
     }
@@ -240,8 +242,10 @@ impl Picture {
     /// 8-bit RGB of the picture as the keyboard will show it.
     pub fn to_rgb8(&self) -> Vec<u8> {
         self.bytes
-            .chunks_exact(2)
-            .flat_map(|p| rgb565_to_rgb([p[0], p[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .flat_map(|&p| rgb565_to_rgb(p))
             .collect()
     }
 }
