@@ -148,7 +148,7 @@ struct EffectArgs {
 #[derive(Args)]
 struct RgbCommon {
     /// Print the packets instead of sending them (opens no device).
-    /// Required for everything except `rgb static ... --no-save`.
+    /// Required for `rgb keys`.
     #[arg(long)]
     dry_run: bool,
     /// Profile 1..5 for a dry run. A real run uses the active profile.
@@ -185,9 +185,11 @@ impl Request {
         }
     }
 
-    /// The only real write approved so far: a static colour, not saved.
+    /// Real writes approved so far (all 2026-11-06): built-in effects,
+    /// static colour included, saved or not. Per-key (custom) lighting is
+    /// still dry-run only.
     fn approved_for_hardware(&self) -> bool {
-        matches!(self, Request::Effect(s, false) if s.effect() == Effect::Static)
+        matches!(self, Request::Effect(..))
     }
 }
 
@@ -532,8 +534,8 @@ fn rgb(command: RgbCommand) -> CliResult {
 
     if !common.dry_run {
         if !request.approved_for_hardware() {
-            eprintln!("error: only `rgb static RRGGBB --no-save` may write to the keyboard yet.");
-            eprintln!("The other lighting commands have not been tested on hardware. Add --dry-run to see their packets.");
+            eprintln!("error: per-key lighting (`rgb keys`) may not write to the keyboard yet.");
+            eprintln!("It has not been approved for hardware. Add --dry-run to see its packets.");
             return Ok(ExitCode::from(4));
         }
         return rgb_send(&request, &common);
@@ -650,7 +652,11 @@ fn rgb_send(request: &Request, common: &RgbCommon) -> CliResult {
         outcome.firmware_after.lighting_slot
     );
     if outcome.verified {
-        println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        if plan.saves {
+            println!("Verified. Saved to flash: the lighting stays after a replug.");
+        } else {
+            println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        }
         Ok(ExitCode::SUCCESS)
     } else {
         eprintln!(

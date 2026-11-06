@@ -45,9 +45,9 @@ on both systems and that the packets look like `docs/PROTOCOL.md`,
 ```
 kebnekaise rgb static ff0000 --dry-run
 kebnekaise rgb effect wave --dry-run
-kebnekaise rgb effect breathing --mode dual --color ff0000,0000ff --dry-run
+kebnekaise rgb effect breathing --mode dual --color "ff0000,0000ff" --dry-run
 kebnekaise rgb keys --all 101010 --key esc=ff0000 --dry-run
-kebnekaise rgb static ff0000          # must refuse with exit code 4 (saving is not allowed yet)
+kebnekaise rgb keys --key esc=ff0000  # must refuse with exit code 4
 ```
 
 ## Phase 2: first lighting write (approved 2026-11-06)
@@ -72,3 +72,42 @@ sends no `13 55`, so nothing is saved to flash.
 - After the replug: is the old lighting back (slot and colour)? This answers
   questions 1 and 2 under "To find out at the first hardware test" in PROTOCOL.md.
 - The `--debug` log of step 3.
+
+## Phase 2: saving a static colour (approved 2026-11-06)
+
+`rgb static RRGGBB` without `--no-save` adds `13 55 00 00 00` (save the
+static slot to flash) after the colour.
+
+1. `kebnekaise rgb static 0060ff --debug` (blue). Expect "Verified. Saved to flash".
+2. Unplug and replug: the keys should still be blue.
+3. To go back: `kebnekaise rgb static <your old colour>` (Markus: ff0000).
+
+Record: does the colour survive the replug, and does the `13 55` get an echo
+like the other writes?
+
+## Phase 2: built-in effects (approved 2026-11-06)
+
+In PowerShell, quote colour lists: unquoted `ffffff,000040` is an array and
+`000040` becomes the number 40.
+
+Try each with `--no-save` first (RAM only, replug to undo), watch the board,
+and note anything that looks different from Base Camp:
+
+```
+kebnekaise rgb effect wave --no-save --debug                 # rainbow, right
+kebnekaise rgb effect wave --mode dual --color "ff0000,0000ff" --direction up --no-save
+kebnekaise rgb effect wave --mode quad --color "ff0000,00ff00,0000ff,ffff00" --no-save
+kebnekaise rgb effect tornado --direction ccw --speed 5 --no-save
+kebnekaise rgb effect breathing --color 00ffaa --speed 2 --no-save
+kebnekaise rgb effect breathing --mode dual --color "ff0000,0000ff" --no-save
+kebnekaise rgb effect reactive --color "ffffff,000040" --no-save   # press keys
+kebnekaise rgb effect matrix --color "00ff00,000000" --no-save
+kebnekaise rgb effect yeti --color "ffffff,002040" --no-save
+kebnekaise rgb effect off --no-save
+```
+
+Then one saved effect (no `--no-save`) and a replug. Go back with
+`kebnekaise rgb static <colour>`.
+
+Record: does each effect look right (direction, speed 1 vs 5, colours,
+background), and does `quad` (four stops, from disassembly only) work?
