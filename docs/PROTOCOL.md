@@ -277,8 +277,9 @@ Common bytes: 2 effect id, 3 `00`, 4 speed, 5 brightness 0..100. [C]
 This section is the specification `everest-proto` implements for phase 2
 (`crates/everest-proto/src/lighting.rs`, `ledmap.rs`). It refines the
 lighting rows of the tables above. Status on 2026-11-06: implemented as a dry
-run, except sequence A for a static colour without step 3, which the project
-owner approved for the first hardware test (`rgb static ... --no-save`).
+run, except sequence A for a static colour: without step 3 approved and
+seen working 2026-11-06 (`rgb static ... --no-save`), with step 3 (saving)
+approved the same day (`rgb static ...`).
 
 Source: everest-mac (MIT), which recovered the sequences from Base Camp
 1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board

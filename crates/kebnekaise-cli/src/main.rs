@@ -148,7 +148,7 @@ struct EffectArgs {
 #[derive(Args)]
 struct RgbCommon {
     /// Print the packets instead of sending them (opens no device).
-    /// Required for everything except `rgb static ... --no-save`.
+    /// Required for everything except `rgb static`.
     #[arg(long)]
     dry_run: bool,
     /// Profile 1..5 for a dry run. A real run uses the active profile.
@@ -185,9 +185,10 @@ impl Request {
         }
     }
 
-    /// The only real write approved so far: a static colour, not saved.
+    /// Real writes approved so far: a static colour, saved or not
+    /// (`--no-save` approved and tested 2026-11-06, saving approved the same day).
     fn approved_for_hardware(&self) -> bool {
-        matches!(self, Request::Effect(s, false) if s.effect() == Effect::Static)
+        matches!(self, Request::Effect(s, _) if s.effect() == Effect::Static)
     }
 }
 
@@ -532,7 +533,7 @@ fn rgb(command: RgbCommand) -> CliResult {
 
     if !common.dry_run {
         if !request.approved_for_hardware() {
-            eprintln!("error: only `rgb static RRGGBB --no-save` may write to the keyboard yet.");
+            eprintln!("error: only `rgb static RRGGBB` may write to the keyboard yet.");
             eprintln!("The other lighting commands have not been tested on hardware. Add --dry-run to see their packets.");
             return Ok(ExitCode::from(4));
         }
@@ -650,7 +651,11 @@ fn rgb_send(request: &Request, common: &RgbCommon) -> CliResult {
         outcome.firmware_after.lighting_slot
     );
     if outcome.verified {
-        println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        if plan.saves {
+            println!("Verified. Saved to flash: the colour stays after a replug.");
+        } else {
+            println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        }
         Ok(ExitCode::SUCCESS)
     } else {
         eprintln!(

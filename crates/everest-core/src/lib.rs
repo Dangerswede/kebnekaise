@@ -373,6 +373,27 @@ mod tests {
     }
 
     #[test]
+    fn apply_static_with_save() {
+        let mut kb = Keyboard::for_lighting(lighting_mock(0));
+        let report = kb.read_report(false).unwrap();
+        let s = everest_proto::EffectSettings::new(
+            everest_proto::Effect::Static,
+            None,
+            vec![everest_proto::Rgb::new(0, 0x60, 0xff)],
+            None,
+            100,
+            None,
+        )
+        .unwrap();
+        let plan = lighting::LightingPlan::effect(3, &s, true).unwrap();
+        let out = kb.apply_lighting(&plan, report.write_gate).unwrap();
+        assert!(out.verified);
+        let written = kb.into_transport().written().to_vec();
+        assert_eq!(written[5][..5], [0x13, 0x55, 0x00, 0x00, 0x00]);
+        assert!(written[6].starts_with(&[0x11, 0x00]));
+    }
+
+    #[test]
     fn apply_refused_on_untested_firmware() {
         let mut kb = Keyboard::for_lighting(scripted(0x55));
         let report = kb.read_report(false).unwrap();

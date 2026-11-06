@@ -47,7 +47,7 @@ kebnekaise rgb static ff0000 --dry-run
 kebnekaise rgb effect wave --dry-run
 kebnekaise rgb effect breathing --mode dual --color ff0000,0000ff --dry-run
 kebnekaise rgb keys --all 101010 --key esc=ff0000 --dry-run
-kebnekaise rgb static ff0000          # must refuse with exit code 4 (saving is not allowed yet)
+kebnekaise rgb effect wave           # must refuse with exit code 4
 ```
 
 ## Phase 2: first lighting write (approved 2026-11-06)
@@ -72,3 +72,15 @@ sends no `13 55`, so nothing is saved to flash.
 - After the replug: is the old lighting back (slot and colour)? This answers
   questions 1 and 2 under "To find out at the first hardware test" in PROTOCOL.md.
 - The `--debug` log of step 3.
+
+## Phase 2: saving a static colour (approved 2026-11-06)
+
+`rgb static RRGGBB` without `--no-save` adds `13 55 00 00 00` (save the
+static slot to flash) after the colour.
+
+1. `kebnekaise rgb static 0060ff --debug` (blue). Expect "Verified. Saved to flash".
+2. Unplug and replug: the keys should still be blue.
+3. To go back: `kebnekaise rgb static <your old colour>` (Markus: ff0000).
+
+Record: does the colour survive the replug, and does the `13 55` get an echo
+like the other writes?

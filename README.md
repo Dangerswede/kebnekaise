@@ -8,8 +8,8 @@ through the operating system's own HID driver, the same way Base Camp does: no
 driver installation, no firmware flashing.
 
 > **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
-> (lighting): one command writes to the keyboard, `rgb static ... --no-save`;
-> the rest is a dry run that prints the packets it would send. This project is not affiliated with Mountain or Listan.
+> (lighting): `rgb static` writes to the keyboard; the rest is a dry run
+> that prints the packets it would send. This project is not affiliated with Mountain or Listan.
 
 ## Usage
 
@@ -20,10 +20,11 @@ kebnekaise info --raw      # ...plus decoded settings and the raw replies
 kebnekaise info --json     # machine-readable
 ```
 
-Lighting. The first one writes to the keyboard (RAM only; replug to undo):
+Lighting. These write to the keyboard:
 
 ```
-kebnekaise rgb static ff8000 --no-save
+kebnekaise rgb static ff8000 --no-save   # RAM only; replug to undo
+kebnekaise rgb static ff8000             # saved to flash (13 55), stays after replug
 ```
 
 Dry run (opens no device, sends nothing):
@@ -36,7 +37,7 @@ kebnekaise rgb keys --all 101010 --key esc=ff0000 --key w=00ff00 --dry-run
 kebnekaise rgb key-names    # names accepted by --key
 ```
 
-Without `--dry-run`, every `rgb` command except `rgb static ... --no-save`
+Without `--dry-run`, every `rgb` command except `rgb static`
 refuses to run until it has been tested on real hardware.
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
