@@ -279,7 +279,7 @@ This section is the specification `everest-proto` implements for phase 2
 lighting rows of the tables above. Status on 2026-11-06: implemented as a dry
 run, except sequence A for a static colour: without step 3 approved and
 seen working 2026-11-06 (`rgb static ... --no-save`), with step 3 (saving)
-approved the same day (`rgb static ...`).
+approved and seen working the same day (`rgb static ...`).
 
 Source: everest-mac (MIT), which recovered the sequences from Base Camp
 1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board
@@ -581,6 +581,12 @@ read  11 00 ... 57 ... 01 00              (profile 1, slot 0)
   covers them. [W]
 - After unplugging and replugging, the keyboard showed the saved colour
   again (red). So `14 2C` without `13 55` lives in RAM only. [W]
+
+### 2026-11-06, saving a static colour (same keyboard, Windows 11)
+
+`kebnekaise rgb static 0060ff` (sequence A with `13 55 00 00 00`): the keys
+turned blue, and stayed blue after unplugging and replugging. `13 55` saves
+the static slot to flash. [W]
 
 ## Sources and licences
 
