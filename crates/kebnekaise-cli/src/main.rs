@@ -643,8 +643,27 @@ fn rgb_send(request: &Request, common: &RgbCommon) -> CliResult {
     if outcome.verified {
         if plan.saves {
             println!("Verified. Saved to flash: the lighting stays after a replug.");
-        } else {
+        } else if before.lighting_slot.as_byte() == plan.expected.lighting_slot {
             println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        } else {
+            println!("Verified. Not saved to flash.");
+            eprintln!(
+                "warning: the keyboard was on lighting slot {} and is now on slot {}. It remembers \
+                 the active slot across a replug, so a replug will show what is saved in slot {} \
+                 (white if nothing was saved there), not your previous lighting.",
+                before.lighting_slot,
+                outcome.firmware_after.lighting_slot,
+                outcome.firmware_after.lighting_slot
+            );
+            eprintln!(
+                "To keep this lighting, run the command again with {}. To go back, set the \
+                 previous lighting again (for example `kebnekaise rgb static RRGGBB`).",
+                if matches!(request, Request::Custom(..)) {
+                    "--save"
+                } else {
+                    "saving (without --no-save)"
+                }
+            );
         }
         Ok(ExitCode::SUCCESS)
     } else {

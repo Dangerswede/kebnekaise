@@ -123,7 +123,9 @@ kebnekaise rgb keys --all 000000 --key iso-extra=ff0000 --key iso-hash=00ff00 --
 kebnekaise rgb keys --all 000000 --key side0=ff0000 --key side44=00ff00
 ```
 
-Then unplug and replug: does the previous lighting come back? Finally try one
+Then unplug and replug. The keyboard keeps the active slot, so an unsaved
+per-key run comes back white (seen 2026-11-06); the CLI warns about this
+whenever an unsaved command changes the slot. Finally try one
 with `--save` and a replug. Go back with `kebnekaise rgb static <colour>`.
 
 Record: are the right keys lit (Esc, WASD; on a Nordic board `iso-extra` is
