@@ -433,9 +433,9 @@ right 41 40 39 38. [P] for us (re-check on hardware; the order is irregular).
 
 1. ~~Does an effect sent without `13 55` survive a replug?~~ No: it is lost
    on replug (seen 2026-11-06, see Hardware observations).
-2. Does `14 00` (profile/slot switch) survive a replug? Probably yes: after
-   unsaved per-key colours and a replug the board was white (custom slot,
-   no saved content). To confirm with `info`.
+2. ~~Does `14 00` (profile/slot switch) survive a replug?~~ Yes: after
+   unsaved per-key colours and a replug, `info` reported the custom slot and
+   the board was white (seen 2026-11-06).
 3. Does `13 55 00 00 06` keep the per-key picture?
 4. Nordic LED positions: `iso-extra`, `iso-hash`, `grave`.
 5. Side-strip order.
