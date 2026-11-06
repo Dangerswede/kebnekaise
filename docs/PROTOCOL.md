@@ -1,7 +1,8 @@
 # Mountain Everest Max: USB HID protocol
 
 Status: **Phase 2 draft** (2026-11-06). Read commands are verified by this
-project on Windows (tag [W]); no writing command has been sent yet. Every entry carries a
+project on Windows (tag [W]). The first lighting write is approved and
+waiting for its hardware test. Every entry carries a
 confidence tag and a source, so we can tell what we know from what we hope.
 
 This is our own description of the protocol, written for interoperability.
@@ -275,9 +276,9 @@ Common bytes: 2 effect id, 3 `00`, 4 speed, 5 brightness 0..100. [C]
 
 This section is the specification `everest-proto` implements for phase 2
 (`crates/everest-proto/src/lighting.rs`, `ledmap.rs`). It refines the
-lighting rows of the tables above. Status on 2026-11-06: **implemented as a
-dry run only**. No lighting packet has been sent by this project yet; the
-first one waits for the project owner's approval.
+lighting rows of the tables above. Status on 2026-11-06: implemented as a dry
+run, except sequence A for a static colour without step 3, which the project
+owner approved for the first hardware test (`rgb static ... --no-save`).
 
 Source: everest-mac (MIT), which recovered the sequences from Base Camp
 1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board
@@ -436,8 +437,8 @@ right 41 40 39 38. [P] for us (re-check on hardware; the order is irregular).
 5. Side-strip order.
 6. Are the pauses long enough? Does the read-back see the new slot at once?
 
-Proposed first write, for the owner to approve: `kebnekaise rgb static
-<colour> --no-save` on the active profile (sequence A without step 3).
+First write (approved 2026-11-06): `kebnekaise rgb static <colour>
+--no-save` on the active profile (sequence A without step 3).
 It switches to the static slot and sets one colour, both believed to be RAM
 only; unplugging the keyboard should bring back the saved lighting.
 

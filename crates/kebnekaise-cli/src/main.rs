@@ -147,17 +147,48 @@ struct EffectArgs {
 
 #[derive(Args)]
 struct RgbCommon {
-    /// Print the packets instead of sending them. Required for now:
-    /// lighting writes have not been approved on real hardware yet.
+    /// Print the packets instead of sending them (opens no device).
+    /// Required for everything except `rgb static ... --no-save`.
     #[arg(long)]
     dry_run: bool,
-    /// Profile 1..5 to plan for. A real run will read the active profile
-    /// from the keyboard instead.
+    /// Profile 1..5 for a dry run. A real run uses the active profile.
     #[arg(long, default_value_t = 1)]
     profile: u8,
     /// Print JSON instead of text.
     #[arg(long)]
     json: bool,
+    /// Command interface to open, as printed by `list`.
+    #[arg(long, value_name = "PATH")]
+    device: Option<String>,
+    /// Write even on untested firmware.
+    #[arg(long)]
+    force: bool,
+    /// Log every packet written and read to stderr.
+    #[arg(long)]
+    debug: bool,
+    /// How long to wait for each reply, in milliseconds.
+    #[arg(long, value_name = "MS", default_value_t = 800)]
+    timeout_ms: u64,
+}
+
+/// What `rgb` was asked to do; turned into a plan once the profile is known.
+enum Request {
+    Effect(EffectSettings, bool),
+    Custom(Box<CustomFrame>, u8, bool),
+}
+
+impl Request {
+    fn plan(&self, profile: u8) -> Result<LightingPlan, everest_proto::LightingError> {
+        match self {
+            Request::Effect(s, save) => LightingPlan::effect(profile, s, *save),
+            Request::Custom(f, b, save) => LightingPlan::custom(profile, f, *b, *save),
+        }
+    }
+
+    /// The only real write approved so far: a static colour, not saved.
+    fn approved_for_hardware(&self) -> bool {
+        matches!(self, Request::Effect(s, false) if s.effect() == Effect::Static)
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -423,7 +454,7 @@ fn print_report(r: &DeviceReport, channel: &HidInterface, raw: bool) {
 }
 
 fn rgb(command: RgbCommand) -> CliResult {
-    let (plan, common) = match command {
+    let (request, common) = match command {
         RgbCommand::KeyNames { shape } => {
             for (name, led) in ledmap::key_names(shape.into()) {
                 println!("{name:<12} {led:>3}");
@@ -444,10 +475,7 @@ fn rgb(command: RgbCommand) -> CliResult {
                 effect.brightness,
                 None,
             )?;
-            (
-                LightingPlan::effect(common.profile, &settings, !effect.no_save)?,
-                common,
-            )
+            (Request::Effect(settings, !effect.no_save), common)
         }
         RgbCommand::Effect {
             name,
@@ -470,10 +498,7 @@ fn rgb(command: RgbCommand) -> CliResult {
             let direction = direction.map(|d| d.parse::<Direction>()).transpose()?;
             let settings =
                 EffectSettings::new(which, mode, colors, speed, effect.brightness, direction)?;
-            (
-                LightingPlan::effect(common.profile, &settings, !effect.no_save)?,
-                common,
-            )
+            (Request::Effect(settings, !effect.no_save), common)
         }
         RgbCommand::Keys {
             all,
@@ -501,21 +526,20 @@ fn rgb(command: RgbCommand) -> CliResult {
                     None => frame.keys[usize::from(ledmap::key_index(name, shape.into())?)] = color,
                 }
             }
-            (
-                LightingPlan::custom(common.profile, &frame, brightness, save)?,
-                common,
-            )
+            (Request::Custom(Box::new(frame), brightness, save), common)
         }
     };
 
     if !common.dry_run {
-        eprintln!("error: lighting commands are not enabled on real hardware yet.");
-        eprintln!(
-            "They have not been approved for this keyboard. Add --dry-run to see the packets."
-        );
-        return Ok(ExitCode::from(4));
+        if !request.approved_for_hardware() {
+            eprintln!("error: only `rgb static RRGGBB --no-save` may write to the keyboard yet.");
+            eprintln!("The other lighting commands have not been tested on hardware. Add --dry-run to see their packets.");
+            return Ok(ExitCode::from(4));
+        }
+        return rgb_send(&request, &common);
     }
 
+    let plan = request.plan(common.profile)?;
     let steps = plan.dry_run()?;
     if common.json {
         let out = serde_json::json!({
@@ -558,4 +582,81 @@ fn rgb(command: RgbCommand) -> CliResult {
         println!("Not saved to flash.");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Sends an approved lighting request to the real keyboard.
+fn rgb_send(request: &Request, common: &RgbCommon) -> CliResult {
+    let api = hid_api()?;
+    let interfaces = list_mountain_interfaces(&api);
+    let channel = match select_command_channel(&interfaces, common.device.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!("Run `kebnekaise list` to see what is connected.");
+            return Ok(ExitCode::from(2));
+        }
+    };
+    // Never write while another program talks to the keyboard.
+    let conflicts = find_conflicts(Some(&channel.path));
+    if !conflicts.is_empty() {
+        print_conflicts(&conflicts);
+        eprintln!("Close them and try again.");
+        return Ok(ExitCode::from(3));
+    }
+
+    let transport = TracingTransport::new(HidTransport::open(&api, &channel.path)?, common.debug);
+    let mut keyboard = Keyboard::for_lighting(transport).with_query_options(QueryOptions {
+        timeout: Duration::from_millis(common.timeout_ms),
+        attempts: 3,
+    });
+    let report = match keyboard.read_report(common.force) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!(
+                "Nothing was written. If Base Camp ran recently, unplug and replug the keyboard."
+            );
+            return Ok(ExitCode::from(1));
+        }
+    };
+    let before = report.firmware.clone();
+    let profile = before
+        .active_profile
+        .ok_or("the keyboard reported no valid active profile; nothing was written")?;
+    let plan = request.plan(profile)?;
+
+    println!(
+        "Firmware {}, profile {profile}, lighting slot {} before.",
+        before.version, before.lighting_slot
+    );
+    let outcome = match keyboard.apply_lighting(&plan, report.write_gate) {
+        Ok(o) => o,
+        Err(everest_core::Error::WritesRefused(fw)) => {
+            eprintln!("error: firmware {fw} is untested; nothing was written. --force overrides.");
+            return Ok(ExitCode::from(5));
+        }
+        Err(e) => return Err(e.into()),
+    };
+    if common.json {
+        println!("{}", serde_json::to_string_pretty(&outcome)?);
+    }
+    println!(
+        "Sent {} packets. Now: profile {}, lighting slot {}.",
+        outcome.packets_sent,
+        outcome
+            .firmware_after
+            .active_profile
+            .map_or("unknown".into(), |p| p.to_string()),
+        outcome.firmware_after.lighting_slot
+    );
+    if outcome.verified {
+        println!("Verified. Not saved to flash: unplug and replug the keyboard to get the saved lighting back.");
+        Ok(ExitCode::SUCCESS)
+    } else {
+        eprintln!(
+            "warning: expected profile {}, slot {} afterwards; the keyboard reports otherwise.",
+            plan.expected.profile, plan.expected.lighting_slot
+        );
+        Ok(ExitCode::from(6))
+    }
 }

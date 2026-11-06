@@ -1,10 +1,10 @@
 //! Phase 2 lighting: turns a request into an ordered plan of packets.
 //!
-//! A plan is only ever *dry-run* in this phase: [`LightingPlan::dry_run`]
-//! passes every packet through a [`Session`] with [`Policy::Lighting`] over
-//! a [`DryRunTransport`], so the allowlist is exercised but nothing reaches
-//! the keyboard. Sending plans to real hardware waits for the project
-//! owner's approval (see `CLAUDE.md`).
+//! [`LightingPlan::dry_run`] passes every packet through a [`Session`] with
+//! [`Policy::Lighting`] over a [`DryRunTransport`], so the allowlist is
+//! exercised but nothing reaches the keyboard. [`crate::Keyboard::apply_lighting`]
+//! sends a plan for real. The CLI only allows that for a static colour
+//! without saving (approved by the project owner on 2026-11-06).
 //!
 //! The sequences and pauses follow everest-mac (MIT), which follows Base
 //! Camp; see "Lighting (phase 2)" in `docs/PROTOCOL.md`.
@@ -14,9 +14,23 @@ use std::time::Duration;
 use everest_hid::{DryRunTransport, Policy, Session};
 use everest_proto::lighting::Rgb;
 use everest_proto::{
-    Classification, CustomFrame, EffectSettings, LightingError, Packet, PACKET_SIZE,
+    Classification, CustomFrame, EffectSettings, FirmwareInfo, LightingError, Packet, PACKET_SIZE,
 };
 use serde::Serialize;
+
+/// How long [`crate::Keyboard::apply_lighting`] keeps reading `11 00`
+/// back before reporting the write as unverified.
+pub const VERIFY_FOR: Duration = Duration::from_secs(3);
+
+/// What a real run did.
+#[derive(Clone, Debug, Serialize)]
+pub struct ApplyOutcome {
+    pub packets_sent: usize,
+    /// `11 00` as read after the write.
+    pub firmware_after: FirmwareInfo,
+    /// The expected profile and slot were active afterwards.
+    pub verified: bool,
+}
 
 /// Lighting slot of custom (per-key) mode.
 pub const CUSTOM_SLOT: u8 = 6;
