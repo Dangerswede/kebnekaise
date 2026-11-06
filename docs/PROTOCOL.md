@@ -15,6 +15,7 @@ No code from other projects is included (see [Sources and licences](#sources-and
 | **[P]** probable | One source, derived from disassembly of Base Camp, not reported as hardware-verified, or only verified on one layout/firmware. |
 | **[U]** unknown | We do not know. Needs a capture (see `CAPTURE.md`) before any implementation. |
 | **[V]** verified by us | Re-checked by this project on Linux *and* Windows. (None yet.) |
+| **[W]** seen by us on Windows | Observed by this project on real hardware on Windows; Linux still to do. See [Hardware observations](#hardware-observations). |
 
 ## Safety classes
 
@@ -122,10 +123,11 @@ All three source projects open the session this way before anything else.
 | Reply byte | Meaning | Conf. |
 |---|---|---|
 | 0..1 | `11 00` echo | [C] |
-| 4 | Firmware version, BCD-like: `0x57` = firmware 57 | [C] |
-| 10 | Active profile, 1..5 | [C] |
-| 11 | Active lighting slot of that profile (see slots below) | [C] |
-| other | unknown (possibly sub-versions, numpad/dock firmware) | [U] |
+| 4 | Firmware version, BCD-like: `0x57` = firmware 57 | [W] |
+| 8 | `0x06` seen; meaning unknown | [U] |
+| 10 | Active profile, 1..5 | [W] |
+| 11 | Active lighting slot of that profile (see slots below) | [W] |
+| other | zero on the unit seen (possibly sub-versions, numpad/dock firmware) | [U] |
 
 ### `11 12`: layout
 
@@ -137,7 +139,7 @@ Reply byte 4 = layout code. Mapping used by Base Camp:
 | 3 | German | ISO | [P] |
 | 5 | French | ISO | [P] |
 | 8 | Italian | ISO | [P] |
-| 11 | Nordic | ISO | [P] |
+| 11 | Nordic | ISO | [W] (code seen on a Nordic board; legends not yet checked) |
 | 12 | Portuguese | ISO | [P] |
 | 15 | Spanish | ISO | [P] |
 | 13 | Hebrew | ANSI | [P] |
@@ -151,15 +153,15 @@ Request: `11 14`, rest zero. The reply carries a 29-byte structure at offset 4
 
 | Reply offset | Field | Conf. |
 |---|---|---|
-| 4 | media dock attached (non-zero = yes) | [C] |
+| 4 | media dock attached (non-zero = yes; `02` seen with the dock attached) | [W] |
 | 5 | dock: show menu | [P] |
 | 6 | dock: menu index | [P] |
-| 7..9 | dock menu colour R,G,B (must be echoed in the write form) | [C] |
+| 7..9 | dock menu colour R,G,B (must be echoed in the write form) | [W] |
 | 10 | screen setup: dial mode (`0x01` image, `0x11` clock, `0x71` volume, `0x91` CPU, `0xA1` GPU, `0xB1` disk, `0xC1` network, `0xD1` RAM, `0xE1` APM). High nibble also described as screensaver type, low bits as screensaver/turn-off enables; the two readings need reconciling. | [P] |
-| 11..12 | screensaver delay, seconds, LE | [P] |
-| 13..14 | turn-off delay, seconds, LE | [P] |
+| 11..12 | screensaver delay, seconds, LE (`1e 00` = 30 s seen) | [P] |
+| 13..14 | turn-off delay, seconds, LE (`1e 00` = 30 s seen) | [P] |
 | 15..19 | "show profile" per profile | [P] |
-| 20 | numpad attached (non-zero = yes) | [C] |
+| 20 | numpad attached (non-zero = yes; `02` seen with the numpad attached) | [W] |
 | 21 | pixel-shift time | [P] |
 | 22 | dock double-click | [P] |
 | 23..32 | five (dial, numpad-displays) brightness pairs, one per lighting slot: `00` = follow lighting, `0x80 | v` = fixed v % (0/25/50/75/100) | [C] |
@@ -220,6 +222,13 @@ Echoing the read reply with the write flag does **not** work: the reply has
 `01` in bytes 4 and 20 (attached), the write needs `02`. [C] The meaning of the
 fixed bytes 11..22 is [U]; we treat them as opaque constants taken from Base
 Camp's behaviour and confirm them by capture before use.
+
+Note from our first hardware read (2026-11-06): that unit's read reply had
+`02` in bytes 4 and 20, and bytes 11..22 were exactly the "constants" of the
+write form (`1e 00 1e 00 01 12 13 14 15 02 00 32`). So these bytes are most
+likely the current settings (delays, show-profile, numpad, double-click)
+rather than constants, and the write form probably echoes them. To be
+confirmed by capture before any write is implemented.
 
 ### Built-in effects (`14 2C`)
 
@@ -337,9 +346,10 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 
 1. Full `11 00` reply layout (other bytes, module firmware versions).
 2. Firmware versions other than 57: what changes, and which versions are in use in the field.
-3. Nordic layout (code 11) and its legends, unverified on hardware.
+3. Nordic layout legends (code 11 itself is confirmed on a Nordic board).
 4. Whether `14 00` (profile switch) persists across replug.
-5. Meaning of the constant bytes 11..22 in the `11 14` write form.
+5. Meaning of bytes 11..22 of `11 14` (probably current settings, see the note under the write form).
+13. Byte 8 of the `11 00` reply (`06` seen).
 6. How to **read back** key remaps, macros and per-key colours from the
    keyboard. No source documents a read command. If none exists, phase 4
    "read profiles" can only mean reading our own files or Base Camp's DB.
@@ -349,6 +359,31 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 10. Dial "custom" menu entry (bit 7 of the menu mask) and dock button functions.
 11. Everest Core behaviour (no modules).
 12. Pixel row order and orientation of the dial image.
+
+## Hardware observations
+
+### 2026-11-06, Windows 11, Nordic Everest Max, firmware 57
+
+Numpad and media dock attached, Base Camp closed (process and service).
+
+- `kebnekaise list`: six HID collections. `MI_00` keyboard (0x0001/0x0006),
+  `MI_01` Col01..03 (0x000C/0x0001, 0x0001/0x0080, 0x0001/0x0002),
+  `MI_02` keyboard, `MI_03` vendor 0xFF00/0x0001. Matches the interface table.
+- The first `info` right after Base Camp had been stopped got **no reply at
+  all** to `11 12` (three tries, 800 ms each). After unplugging and replugging
+  the keyboard, every query was answered at once. Base Camp may leave the
+  vendor channel in a state that only a replug clears; to be confirmed.
+- Raw replies after the replug:
+
+```
+11 00  11 00 00 00 57 00 00 00 06 00 01 00 00 ...
+11 12  11 12 00 00 0b 00 00 ...
+11 14  11 14 00 00 02 bf 00 20 53 a9 01 1e 00 1e 00 01 12 13 14 15 02 00 32 00 00 ...
+```
+
+Decoded: firmware 57, profile 1, lighting slot 0 (static), layout code 11
+(Nordic), dock and numpad attached, dial mode image, dial colour `#2053a9`,
+display brightness "follow lighting" in all five slots.
 
 ## Sources and licences
 

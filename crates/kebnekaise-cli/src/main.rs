@@ -190,6 +190,9 @@ fn info(opts: InfoOptions, device: Option<&str>) -> CliResult {
             let skipped = keyboard.skipped();
             if skipped.is_empty() {
                 eprintln!("Nothing at all was received from the keyboard.");
+                eprintln!(
+                    "If Base Camp was running recently, unplug and replug the keyboard, then try again."
+                );
             } else {
                 eprintln!("Packets received that were not the expected reply:");
                 for p in skipped {
