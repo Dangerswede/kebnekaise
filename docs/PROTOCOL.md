@@ -429,8 +429,8 @@ right 41 40 39 38. [P] for us (re-check on hardware; the order is irregular).
 
 ### To find out at the first hardware test
 
-1. Does an effect sent without `13 55` survive a replug? (Decides whether
-   `--no-save` is useful and how often we write flash.)
+1. ~~Does an effect sent without `13 55` survive a replug?~~ No: it is lost
+   on replug (seen 2026-11-06, see Hardware observations).
 2. Does `14 00` (profile/slot switch) survive a replug?
 3. Does `13 55 00 00 06` keep the per-key picture?
 4. Nordic LED positions: `iso-extra`, `iso-hash`, `grave`.
@@ -576,7 +576,10 @@ read  11 00 ... 57 ... 01 00              (profile 1, slot 0)
   endpoint, byte for byte, about 250 ms later. Readers must skip these echoes
   (the session already does, since they do not match the awaited command).
   Whether an echo means "applied" is [U].
-- Side strips and the state after a replug: still to be reported.
+- The side strips changed colour together with the keys: the static effect
+  covers them. [W]
+- After unplugging and replugging, the keyboard showed the saved colour
+  again (red). So `14 2C` without `13 55` lives in RAM only. [W]
 
 ## Sources and licences
 
