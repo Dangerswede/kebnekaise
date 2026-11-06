@@ -1,7 +1,11 @@
 //! High-level access to the Mountain Everest Max.
 //!
-//! Phase 1 is read-only: [`Keyboard`] opens a [`Session`] with
-//! [`Policy::ReadOnly`] and only sends `11 00`, `11 12` and `11 14`.
+//! [`Keyboard::new`] is read-only: its [`Session`] has [`Policy::ReadOnly`]
+//! and only sends `11 00`, `11 12` and `11 14`. [`Keyboard::for_lighting`]
+//! also allows the lighting commands, and [`Keyboard::apply_lighting`] sends
+//! a [`lighting::LightingPlan`] only when the firmware gate allows writes.
+
+pub mod lighting;
 
 use everest_hid::session::QueryOptions;
 use everest_hid::{Policy, Session, Transport};
@@ -17,6 +21,12 @@ pub enum Error {
     Hid(#[from] everest_hid::Error),
     #[error("unexpected reply: {0}")]
     Parse(#[from] ParseError),
+    #[error("writes are refused on untested firmware {0} (pass --force to override)")]
+    WritesRefused(FirmwareVersion),
+    #[error("this session was opened read-only")]
+    ReadOnlySession,
+    #[error("the keyboard reported no valid active profile")]
+    NoActiveProfile,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -104,6 +114,59 @@ impl<T: Transport> Keyboard<T> {
         Keyboard {
             session: Session::new(transport, Policy::ReadOnly),
             options: QueryOptions::default(),
+        }
+    }
+
+    /// Wraps an open transport for lighting: reads plus the lighting
+    /// commands, nothing else. Nothing is sent yet.
+    pub fn for_lighting(transport: T) -> Self {
+        Keyboard {
+            session: Session::new(transport, Policy::Lighting),
+            options: QueryOptions::default(),
+        }
+    }
+
+    /// Sends a lighting plan, pausing after each packet as the plan says,
+    /// then reads `11 00` back (for up to about 3 s) to check that the
+    /// expected profile and lighting slot are active.
+    ///
+    /// Refuses unless `gate` allows writes and the session was opened with
+    /// [`Keyboard::for_lighting`]. Every packet still passes the session's
+    /// allowlist.
+    pub fn apply_lighting(
+        &mut self,
+        plan: &lighting::LightingPlan,
+        gate: WriteGate,
+    ) -> Result<lighting::ApplyOutcome> {
+        if let WriteGate::Refused { firmware } = gate {
+            return Err(Error::WritesRefused(firmware));
+        }
+        if self.session.policy() != Policy::Lighting {
+            return Err(Error::ReadOnlySession);
+        }
+        // Check the whole plan against the allowlist before the first write,
+        // so a refusal can never leave the keyboard half-way.
+        plan.dry_run()?;
+        for step in &plan.steps {
+            self.session.send(&step.packet)?;
+            std::thread::sleep(step.wait_after);
+        }
+        self.session.drain()?;
+
+        let deadline = std::time::Instant::now() + lighting::VERIFY_FOR;
+        loop {
+            let reply = self.session.query(&Packet::firmware_info(), self.options)?;
+            let after = FirmwareInfo::parse(&reply)?;
+            let verified = after.active_profile == Some(plan.expected.profile)
+                && after.lighting_slot.as_byte() == plan.expected.lighting_slot;
+            if verified || std::time::Instant::now() >= deadline {
+                return Ok(lighting::ApplyOutcome {
+                    packets_sent: plan.steps.len(),
+                    firmware_after: after,
+                    verified,
+                });
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
         }
     }
 
@@ -252,6 +315,83 @@ mod tests {
         assert_eq!(r.layout, None);
         assert!(r.raw.layout.is_none());
         assert_eq!(r.firmware.version, FirmwareVersion(0x57));
+    }
+
+    fn lighting_mock(slot_after: u8) -> MockTransport {
+        let mut m = scripted(0x57);
+        // First 11 00 (read_report): profile 3, slot 1. Afterwards: slot_after.
+        m.on(
+            [0x11, 0x00],
+            vec![reply(&[0x11, 0x00], &[(4, 0x57), (10, 3), (11, 1)])],
+        );
+        m.always(
+            [0x11, 0x00],
+            vec![reply(
+                &[0x11, 0x00],
+                &[(4, 0x57), (10, 3), (11, slot_after)],
+            )],
+        );
+        m
+    }
+
+    fn static_plan(profile: u8) -> lighting::LightingPlan {
+        let s = everest_proto::EffectSettings::new(
+            everest_proto::Effect::Static,
+            None,
+            vec![everest_proto::Rgb::new(255, 0, 0)],
+            None,
+            100,
+            None,
+        )
+        .unwrap();
+        lighting::LightingPlan::effect(profile, &s, false).unwrap()
+    }
+
+    #[test]
+    fn apply_static_without_save() {
+        let mut kb = Keyboard::for_lighting(lighting_mock(0));
+        let report = kb.read_report(false).unwrap();
+        let plan = static_plan(report.firmware.active_profile.unwrap());
+        let out = kb.apply_lighting(&plan, report.write_gate).unwrap();
+        assert!(out.verified);
+        assert_eq!(out.packets_sent, 2);
+        let written = kb.into_transport().written().to_vec();
+        let cmds: Vec<_> = written.iter().map(|p| [p[0], p[1]]).collect();
+        assert_eq!(
+            cmds,
+            [
+                [0x11, 0x12],
+                [0x11, 0x14],
+                [0x11, 0x00],
+                [0x14, 0x00],
+                [0x14, 0x2C],
+                [0x11, 0x00]
+            ]
+        );
+        assert_eq!(written[3][..6], [0x14, 0x00, 0x00, 0x00, 0x03, 0x00]);
+        assert!(!written.iter().any(|p| p[0] == 0x13));
+    }
+
+    #[test]
+    fn apply_refused_on_untested_firmware() {
+        let mut kb = Keyboard::for_lighting(scripted(0x55));
+        let report = kb.read_report(false).unwrap();
+        assert!(matches!(
+            kb.apply_lighting(&static_plan(3), report.write_gate),
+            Err(Error::WritesRefused(_))
+        ));
+        assert_eq!(kb.into_transport().written().len(), 3); // the reads only
+    }
+
+    #[test]
+    fn apply_refused_on_read_only_session() {
+        let mut kb = Keyboard::new(scripted(0x57));
+        let report = kb.read_report(false).unwrap();
+        assert!(matches!(
+            kb.apply_lighting(&static_plan(3), report.write_gate),
+            Err(Error::ReadOnlySession)
+        ));
+        assert_eq!(kb.into_transport().written().len(), 3);
     }
 
     #[test]

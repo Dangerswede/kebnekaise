@@ -35,3 +35,40 @@ both Linux and Windows and paste the output into the pull request or issue.
 - Active profile and lighting slot: switch profile on the keyboard
   (Fn shortcut) and run `info` again.
 - The three raw replies. They fill the unknown bytes in `PROTOCOL.md`.
+
+## Phase 2: lighting dry run
+
+No keyboard needed; nothing is opened or sent. Check that the commands run
+on both systems and that the packets look like `docs/PROTOCOL.md`,
+"Lighting (phase 2)":
+
+```
+kebnekaise rgb static ff0000 --dry-run
+kebnekaise rgb effect wave --dry-run
+kebnekaise rgb effect breathing --mode dual --color ff0000,0000ff --dry-run
+kebnekaise rgb keys --all 101010 --key esc=ff0000 --dry-run
+kebnekaise rgb static ff0000          # must refuse with exit code 4 (saving is not allowed yet)
+```
+
+## Phase 2: first lighting write (approved 2026-11-06)
+
+`rgb static RRGGBB --no-save` is the only command that writes. It reads
+`11 12`, `11 14`, `11 00`, then sends `14 00` (switch the active profile to
+its static slot) and `14 2C` (static colour), and reads `11 00` back. It
+sends no `13 55`, so nothing is saved to flash.
+
+1. Close Base Camp and its service, replug the keyboard (as for phase 1).
+2. `kebnekaise info` and note the profile and lighting slot.
+3. `kebnekaise rgb static ff0000 --no-save --debug`
+   - Expect all keys red and "Verified" at the end (exit code 0).
+   - Exit code 6 means the read-back did not show the static slot: paste the output.
+4. `kebnekaise rgb static 00ff00 --no-save` (green), and once with
+   `--brightness 20` to see the brightness byte work.
+5. Unplug and replug the keyboard, then `kebnekaise info` again.
+
+## What to record (lighting)
+
+- Did the colour change, and did the side strips change too?
+- After the replug: is the old lighting back (slot and colour)? This answers
+  questions 1 and 2 under "To find out at the first hardware test" in PROTOCOL.md.
+- The `--debug` log of step 3.

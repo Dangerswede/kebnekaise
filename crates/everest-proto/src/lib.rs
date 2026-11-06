@@ -8,14 +8,17 @@
 mod classify;
 mod info;
 mod layout;
+pub mod ledmap;
+pub mod lighting;
 mod packet;
 
-pub use classify::{classify, Classification, SafetyClass};
+pub use classify::{classify, Classification, Group, SafetyClass};
 pub use info::{
     parse_layout, DialMode, DisplayBrightness, ExtendedInfo, FirmwareInfo, FirmwareVersion,
     LightingSlot, ModuleSet, ParseError,
 };
 pub use layout::{Layout, LayoutShape};
+pub use lighting::{ColorMode, CustomFrame, Direction, Effect, EffectSettings, LightingError, Rgb};
 pub use packet::{is_reply_to, Packet, PACKET_SIZE};
 
 /// USB vendor ID used by Mountain.

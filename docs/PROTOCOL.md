@@ -1,7 +1,8 @@
 # Mountain Everest Max: USB HID protocol
 
-Status: **Phase 0 draft** (2026-10-30). Nothing in this document has been
-verified by this project on real hardware yet. Every entry carries a
+Status: **Phase 2 draft** (2026-11-06). Read commands are verified by this
+project on Windows (tag [W]). The first lighting write is approved and
+waiting for its hardware test. Every entry carries a
 confidence tag and a source, so we can tell what we know from what we hope.
 
 This is our own description of the protocol, written for interoperability.
@@ -180,6 +181,7 @@ Request: `11 14`, rest zero. The reply carries a 29-byte structure at offset 4
 | `14 A0 <0..2> 01` | Bind keys to the static slot after a custom frame (exact meaning [U]) | [P] |
 
 Per-key frames can be streamed at about 20-30 fps, sending only the packets that changed. [C]
+Exact sequences, byte layouts and allowlist rules: [Lighting (phase 2)](#lighting-phase-2).
 
 ## Commands: PERSIST (flash)
 
@@ -270,6 +272,176 @@ Common bytes: 2 effect id, 3 `00`, 4 speed, 5 brightness 0..100. [C]
 - Base Camp's own legend tables contain index errors for some layouts (keys on
   F1/F11/F12 LEDs in German, Italian, Nordic, Spanish). [P]
 
+## Lighting (phase 2)
+
+This section is the specification `everest-proto` implements for phase 2
+(`crates/everest-proto/src/lighting.rs`, `ledmap.rs`). It refines the
+lighting rows of the tables above. Status on 2026-11-06: implemented as a dry
+run, except sequence A for a static colour without step 3, which the project
+owner approved for the first hardware test (`rgb static ... --no-save`).
+
+Source: everest-mac (MIT), which recovered the sequences from Base Camp
+1.9.10 (`SDKDLL.dll`, `BaseCamp.UI.dll`) and verified them on a UK-ISO board
+with firmware 57. Tags below are relative to that: [C] = everest-mac
+hardware-verified, [P] = everest-mac only from disassembly, [U] = unknown.
+
+### What the keyboard offers (and does not)
+
+- **No lighting read-back.** The only lighting state we can read is the
+  active profile and lighting slot (`11 00` bytes 10 and 11). Effect
+  parameters, colours and brightness cannot be read. [C] (no source has a
+  read command)
+- **No separate brightness command.** Brightness is byte 5 of every effect
+  packet. Changing only the brightness means re-sending the whole effect.
+  Since the current parameters cannot be read, a brightness change needs the
+  rest of the effect from the user (or, later, from our own profile file). [C]
+- Every effect lives in its own slot of the active profile, so applying an
+  effect also makes that slot active. [C]
+
+### Sequence A: built-in effect (static colour included)
+
+| # | Packet | Class | Pause after |
+|---|---|---|---|
+| 1 | `14 00 00 00 <profile> <slot>` switch to the effect's slot | VOLATILE | 400 ms |
+| 2 | `14 2C <effect id> 00 ...` effect parameters (below) | PERSIST* | 250 ms |
+| 3 | `13 55 00 00 <slot>` save the slot to flash (optional) | PERSIST | 500 ms |
+| 4 | `11 00` read back: expect `<profile>` in byte 10 and `<slot>` in byte 11 | READ | — |
+
+`<profile>` is read from `11 00` byte 10 just before step 1, so the active
+profile does not change. Base Camp always sends step 3 [C]. *Step 2 alone is
+believed to be lost on replug (that is why Base Camp saves), but this is
+[U]; our first hardware test leaves out step 3 to find out. Pauses are
+everest-mac's (300 ms + 120 ms, 250 ms) rounded up; the keyboard can need up
+to ~3 s after a settings write [C], so step 4 retries before failing.
+
+### Sequence B: per-key colours (custom mode)
+
+| # | Packet | Class | Pause after |
+|---|---|---|---|
+| 1 | `14 00 00 00 <profile> 06` switch to the custom slot | VOLATILE | 400 ms |
+| 2 | `14 2C 0A 00 FF 64 00` enter custom mode, brightness 100 | VOLATILE | 400 ms |
+| 3..10 | `14 2C 00 01 <ix 0..7> 64 00 <19 x RGB>` key colours | VOLATILE | 30 ms |
+| 11..13 | `14 2D 0A 00 <ix 0..2> FF 00 <19/19/7 x RGB>` side strips | VOLATILE | 30 ms |
+| 14..16 | `14 A0 <0..2> 01` bind keys to the static slot | VOLATILE | 100 ms |
+| 17 | `13 55 00 00 06` save the custom picture (optional) | PERSIST | 500 ms |
+
+[C] for the order and bytes. Brightness is applied on the host by scaling the
+colours, with the brightness bytes of steps 2..10 fixed at 100 (`0x64`), as
+everest-mac does. What the firmware does with other values there is [U].
+For animation, only packets whose content changed are re-sent (20..30 fps
+[C]); step 17 must not be repeated per frame (flash wear).
+
+`14 A0` "binds every key to the static slot" in everest-mac's words; its real
+meaning is [U]. It is sent once, after the first frame.
+
+### Packet layouts
+
+`14 2C` effect parameters (64 bytes, zero-padded):
+
+| Byte | Content |
+|---|---|
+| 0..1 | `14 2C` |
+| 2 | effect id (table under "Built-in effects": `00 01 03 04 06 07 09 0C`) |
+| 3 | `00` |
+| 4 | speed: hardware value from the effect's speed table; `FF` for static and off |
+| 5 | brightness 0..100 |
+| 6.. | block data (wave, tornado) or effect data (the rest), below |
+
+Block data (wave, tornado):
+
+| Mode | 6 | 7 | 8 | 9 | 10.. |
+|---|---|---|---|---|---|
+| rainbow | `02` | direction | `02` | `00` | `FF 00 00 00 FF` |
+| single | `00` | direction | `00` | `01` | `64 R G B FF` |
+| dual (c1 c2) | `00` | direction | `02` | `04` | `19 c1 32 c2 4B c1 64 c2` |
+| quad (wave only) | `00` | direction | `02` | `04` | `19 c1 32 c2 4B c3 64 c4` |
+
+Stops are `<position %> R G B`. Direction: wave `00` right, `02` down, `04`
+left, `06` up; tornado `09` clockwise, `0A` anticlockwise. [C] for rainbow,
+single and dual; quad is the firmware's native four-stop form, [P].
+
+Effect data (static, breathing, reactive, matrix, yeti):
+
+| Mode | 6 | 7..8 | 9..11 | 12..14 | 18..20 |
+|---|---|---|---|---|---|
+| single (static, breathing) | `00` | `FF FF` | colour | 0 | 0 |
+| dual (breathing) | `10` | `FF FF` | colour 1 | colour 2 | 0 |
+| rainbow (breathing) | `02` | `FF FF` | 0 | 0 | 0 |
+| key + background (reactive, matrix, yeti) | `00` | `FF FF` | key colour | 0 | background |
+
+Off: bytes 6..8 `FF FF FF`, nothing else. [C]
+
+Speed: the CLI takes 1 (slowest) to 5 (fastest) and maps it to the five
+hardware steps of the effect (Base Camp's 0..100 slider thresholds are
+12/37/62/87). Smaller hardware values are faster:
+
+| Effect | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| wave, tornado | 10 | 9 | 8 | 7 | 6 |
+| breathing, reactive | 5 | 4 | 3 | 1 | 0 |
+| matrix | 20 | 15 | 10 | 5 | 0 |
+| yeti | 10 | 7 | 5 | 3 | 0 |
+
+### Allowlist rules
+
+The classifier (`classify.rs`) only accepts lighting packets in exactly these
+forms; any other value is `DENY` and never sent:
+
+| Packet | Accepted only when |
+|---|---|
+| `14 00` | bytes 2..3 `00`, profile 1..5, slot 0..8, rest zero |
+| `13 55` | bytes 2..3 `00`, slot 0..8, rest zero |
+| `14 2C 0A 00` | byte 4 `FF`, brightness ≤ 100, rest zero |
+| `14 2C 00 01` | packet index 0..7, brightness ≤ 100, byte 6 `00` |
+| `14 2C <id> 00` | id one of the eight effect ids, brightness ≤ 100 |
+| `14 2D 0A 00` | packet index 0..2, byte 5 `FF`, byte 6 `00`, zero after the packet's LEDs |
+| `14 A0` | chunk 0..2, byte 3 `01`, rest zero |
+
+Each classification also carries a feature group. A session opened with the
+`Lighting` policy may send `READ` packets and `VOLATILE`/`PERSIST` packets of
+the lighting group, nothing else: no settings write, display values, actions,
+remaps, pictures or resets.
+
+### Key LED map
+
+Index = `column * 9 + row`. Names are physical positions on a US board; on a
+Nordic board `semicolon` is Ö, `quote` is Ä, `lbracket` is Å, `grave` is §,
+`iso-extra` is `<>|` and `iso-hash` is `'*`. [C] on UK-ISO (everest-mac,
+LED by LED); [P] on Nordic until we see it.
+
+| Row | Keys (name = LED index) |
+|---|---|
+| F row | esc 0, f1 9, f2 18, f3 27, f4 36, f5 45, f6 54, f7 63, f8 72, f9 81, f10 90, f11 99, f12 108, prtsc 117, scrlk 114, pause 123 |
+| Numbers | grave 1, 1 10, 2 19, 3 28, 4 37, 5 46, 6 55, 7 64, 8 73, 9 82, 0 91, minus 100, equal 109, backspace 87, insert 96, home 105, pgup 115 |
+| Top | tab 2, q 11, w 20, e 29, r 38, t 47, y 56, u 65, i 74, o 83, p 92, lbracket 101, rbracket 110, enter 120, delete 88, end 97, pgdn 106 |
+| Home | caps 3, a 12, s 21, d 30, f 39, g 48, h 57, j 66, k 75, l 84, semicolon 93, quote 102, iso-hash 111 (ISO) |
+| Bottom | lshift 4, iso-extra 13 (ISO), z 22, x 31, c 40, v 49, b 58, n 67, m 76, comma 85, period 94, slash 103, rshift 121, up 124 |
+| Space | lctrl 5, lwin 14, lalt 23, space 41, ralt 68, rwin 77, fn 86, rctrl 95, left 104, down 113, right 122 |
+| Numpad | numlock 6, kp-slash 24, kp-star 16, kp-minus 15, kp7 61, kp8 69, kp9 70, kp-plus 7, kp4 51, kp5 52, kp6 60, kp1 34, kp2 42, kp3 43, kp-enter 33, kp0 78, kp-dot 79 |
+
+ANSI boards have `backslash` 119 instead of `iso-hash` and `iso-extra`.
+The other slots of the 152-slot frame are unused and sent black.
+
+Side strips, 45 LEDs in their own index space (Base Camp's matrix ids
+126..170): main board top 13 14 15 7 6 5 4 3 2 1 0, bottom 20..30 12, left
+16..19, right 9 8 10 11; numpad top 44 43 42, bottom 35 36 37, left 31..34,
+right 41 40 39 38. [P] for us (re-check on hardware; the order is irregular).
+
+### To find out at the first hardware test
+
+1. ~~Does an effect sent without `13 55` survive a replug?~~ No: it is lost
+   on replug (seen 2026-11-06, see Hardware observations).
+2. Does `14 00` (profile/slot switch) survive a replug?
+3. Does `13 55 00 00 06` keep the per-key picture?
+4. Nordic LED positions: `iso-extra`, `iso-hash`, `grave`.
+5. Side-strip order.
+6. Are the pauses long enough? Does the read-back see the new slot at once?
+
+First write (approved 2026-11-06): `kebnekaise rgb static <colour>
+--no-save` on the active profile (sequence A without step 3).
+It switches to the static slot and sets one colour, both believed to be RAM
+only; unplugging the keyboard should bring back the saved lighting.
+
 ## Commands: TRANSFER (pictures) — phase 3 only
 
 **This uses the same mechanism as the firmware update.** We implement exactly
@@ -351,7 +523,7 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 5. Meaning of bytes 11..22 of `11 14` (probably current settings, see the note under the write form).
 13. Byte 8 of the `11 00` reply (`06` seen).
 6. How to **read back** key remaps, macros and per-key colours from the
-   keyboard. No source documents a read command. If none exists, phase 4
+   keyboard (lighting has no read-back either, see [Lighting (phase 2)](#lighting-phase-2)). No source documents a read command. If none exists, phase 4
    "read profiles" can only mean reading our own files or Base Camp's DB.
 7. Macro storage format (Base Camp has macros; no protocol documented).
 8. Key remap `14 20`/`14 21`: matrix code table and hardware behaviour.
@@ -384,6 +556,30 @@ Numpad and media dock attached, Base Camp closed (process and service).
 Decoded: firmware 57, profile 1, lighting slot 0 (static), layout code 11
 (Nordic), dock and numpad attached, dial mode image, dial colour `#2053a9`,
 display brightness "follow lighting" in all five slots.
+
+### 2026-11-06, first lighting write (same keyboard, Windows 11)
+
+`kebnekaise rgb static ff0000 --no-save`, then `00ff00 --brightness 20`,
+on profile 1 with the static slot already active:
+
+```
+write 14 00 00 00 01                      (switch: profile 1, slot 0)
+write 14 2c 00 00 ff 64 00 ff ff ff       (static, brightness 100, red)
+read  14 00 00 00 01
+read  14 2c 00 00 ff 64 00 ff ff ff
+read  11 00 ... 57 ... 01 00              (profile 1, slot 0)
+```
+
+- The keys turned red, then dim green. Sequence A without `13 55` and the
+  static `14 2C` layout are [W].
+- **The keyboard echoes each lighting write** back on the interrupt IN
+  endpoint, byte for byte, about 250 ms later. Readers must skip these echoes
+  (the session already does, since they do not match the awaited command).
+  Whether an echo means "applied" is [U].
+- The side strips changed colour together with the keys: the static effect
+  covers them. [W]
+- After unplugging and replugging, the keyboard showed the saved colour
+  again (red). So `14 2C` without `13 55` lives in RAM only. [W]
 
 ## Sources and licences
 

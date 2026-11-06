@@ -7,8 +7,9 @@ The keyboard keeps its original firmware. Kebnekaise talks to it over USB HID
 through the operating system's own HID driver, the same way Base Camp does: no
 driver installation, no firmware flashing.
 
-> **Status: early.** Phase 1 (read-only CLI) is in progress. Nothing writes to
-> the keyboard yet. This project is not affiliated with Mountain or Listan.
+> **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
+> (lighting): one command writes to the keyboard, `rgb static ... --no-save`;
+> the rest is a dry run that prints the packets it would send. This project is not affiliated with Mountain or Listan.
 
 ## Usage
 
@@ -18,6 +19,25 @@ kebnekaise info            # firmware, layout, modules, active profile, lighting
 kebnekaise info --raw      # ...plus decoded settings and the raw replies
 kebnekaise info --json     # machine-readable
 ```
+
+Lighting. The first one writes to the keyboard (RAM only; replug to undo):
+
+```
+kebnekaise rgb static ff8000 --no-save
+```
+
+Dry run (opens no device, sends nothing):
+
+```
+kebnekaise rgb static ff8000 --brightness 60 --dry-run
+kebnekaise rgb effect wave --mode dual --color ff0000,0000ff --speed 4 --dry-run
+kebnekaise rgb effect reactive --color ffffff,000040 --dry-run
+kebnekaise rgb keys --all 101010 --key esc=ff0000 --key w=00ff00 --dry-run
+kebnekaise rgb key-names    # names accepted by --key
+```
+
+Without `--dry-run`, every `rgb` command except `rgb static ... --no-save`
+refuses to run until it has been tested on real hardware.
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
 It refuses to run while Base Camp or another keyboard tool seems to be
@@ -64,8 +84,8 @@ Camp first (including the tray icon and the `BaseCampService` service).
 | Phase | Content |
 |---|---|
 | 0 | Research and plan (done) |
-| 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (in progress) |
-| 2 | RGB: static colour, brightness, per-key colours, built-in effects |
+| 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows verified; Linux to test) |
+| 2 | RGB: static colour, brightness, per-key colours, built-in effects (dry run done; hardware test next) |
 | 3 | Display keys and dial screen: upload your own pictures |
 | 4 | Profiles and key bindings: read, write, export, import |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |

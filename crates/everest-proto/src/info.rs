@@ -76,6 +76,22 @@ pub enum LightingSlot {
 }
 
 impl LightingSlot {
+    /// The slot number as the keyboard reports it (`11 00` byte 11).
+    pub fn as_byte(self) -> u8 {
+        match self {
+            Self::Static => 0,
+            Self::Wave => 1,
+            Self::Tornado => 2,
+            Self::Breathing => 3,
+            Self::Reactive => 4,
+            Self::Matrix => 5,
+            Self::Custom => 6,
+            Self::Yeti => 7,
+            Self::Off => 8,
+            Self::Unknown(b) => b,
+        }
+    }
+
     pub fn from_byte(b: u8) -> Self {
         match b {
             0 => Self::Static,
