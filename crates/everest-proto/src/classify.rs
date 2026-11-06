@@ -100,6 +100,62 @@ fn classify_lighting(bytes: &[u8]) -> Classification {
     }
 }
 
+/// Picture resets must match their documented form exactly. See
+/// "Pictures (phase 3)" in `docs/PROTOCOL.md`.
+fn classify_picture_reset(bytes: &[u8]) -> Classification {
+    use Group::Pictures;
+    use SafetyClass::*;
+    let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+    let zero_from = |from: usize| bytes.iter().skip(from).all(|&b| b == 0);
+
+    match (at(0), at(1), at(2), at(3)) {
+        (0x13, 0x41, 0x00, 0x00) if at(4) == 0x01 && zero_from(5) => {
+            g("dial picture reset", Persist, Pictures)
+        }
+        (0x13, 0x42, 0x00, 0x00)
+            if (4..9).all(|i| at(i) <= 0x0F) && (4..9).any(|i| at(i) != 0) && zero_from(9) =>
+        {
+            g("display-key picture reset", Persist, Pictures)
+        }
+        _ => c("picture reset (malformed)", Deny),
+    }
+}
+
+/// `aa 55` feature reports: only the picture-transfer forms Base Camp uses,
+/// with the two documented targets and exact picture sizes.
+fn classify_transfer(bytes: &[u8]) -> Classification {
+    use crate::pictures::{DIAL_BYTES, KEY_BYTES, TARGET_DIAL, TARGET_KEYS};
+    use Group::Pictures;
+    use SafetyClass::*;
+    let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+    let zero_from = |from: usize| bytes.iter().skip(from).all(|&b| b == 0);
+
+    match (at(2), at(3)) {
+        (0x21, TARGET_DIAL) if zero_from(4) => g("picture target: dial", Transfer, Pictures),
+        (0x21, TARGET_KEYS) if zero_from(4) => {
+            g("picture target: display keys", Transfer, Pictures)
+        }
+        (0x22, 0x00) if zero_from(4) => g("picture target confirm", Transfer, Pictures),
+        (0x10, _) => {
+            let size = usize::from(at(3)) | usize::from(at(4)) << 8 | usize::from(at(5)) << 16;
+            let fixed = at(8) == 0 && at(9) == 0 && at(10) == 0x02 && zero_from(13);
+            let (profile, key) = (at(11), at(12));
+            let slot_ok = match size {
+                KEY_BYTES => (1..=5).contains(&profile) && key <= 3,
+                DIAL_BYTES => profile == 1 && key == 0,
+                _ => false,
+            };
+            if fixed && slot_ok {
+                g("picture descriptor", Transfer, Pictures)
+            } else {
+                c("picture descriptor (malformed)", Deny)
+            }
+        }
+        (0x7F, _) => c("device reset", Deny),
+        _ => c("unknown flash command", Deny),
+    }
+}
+
 /// Classifies a host-to-device packet (interrupt channel or feature report).
 ///
 /// Anything not described in `docs/PROTOCOL.md` is [`SafetyClass::Deny`].
@@ -127,22 +183,14 @@ pub fn classify(bytes: &[u8]) -> Classification {
         (0x11, 0x84) => c("clock set", Volatile),
         (0x12, 0x08) => g("action slot select", Persist, Group::Actions),
         (0x13, 0x40) => c("flash reset", Deny),
-        (0x13, 0x41) => g("dial picture reset", Persist, Group::Pictures),
-        (0x13, 0x42) => g("display-key picture reset", Persist, Group::Pictures),
+        (0x13, 0x41) | (0x13, 0x42) => classify_picture_reset(bytes),
         (0x13, 0x55) | (0x14, 0x00) | (0x14, 0x2C) | (0x14, 0x2D) | (0x14, 0xA0) => {
             classify_lighting(bytes)
         }
         (0x14, 0x20) => g("key remap", Persist, Group::Keymap),
         (0x14, 0x21) => g("key remap with modifiers", Persist, Group::Keymap),
         (0x17, 0xAA) => g("action payload", Persist, Group::Actions),
-        (0xAA, 0x55) => match (at(2), at(3)) {
-            (0x21, 0x03) => g("picture target: dial", Transfer, Group::Pictures),
-            (0x21, 0x04) => g("picture target: display keys", Transfer, Group::Pictures),
-            (0x22, 0x00) => g("picture target confirm", Transfer, Group::Pictures),
-            (0x10, _) => g("picture descriptor", Transfer, Group::Pictures),
-            (0x7F, _) => c("device reset", Deny),
-            _ => c("unknown flash command", Deny),
-        },
+        (0xAA, 0x55) => classify_transfer(bytes),
         _ => c("unknown", Deny),
     }
 }
@@ -201,6 +249,61 @@ mod tests {
             classify(&pad(&[0xAA, 0x55, 0x21, 0x04])).class,
             SafetyClass::Transfer
         );
+    }
+
+    #[test]
+    fn picture_packets_are_strict() {
+        let key_desc = |profile: u8, key: u8| {
+            pad(&[
+                0xAA, 0x55, 0x10, 0x80, 0x28, 0x00, 0x12, 0x34, 0, 0, 0x02, profile, key,
+            ])
+        };
+        let dial_desc = |profile: u8, key: u8| {
+            pad(&[
+                0xAA, 0x55, 0x10, 0x80, 0x7E, 0x01, 0x12, 0x34, 0, 0, 0x02, profile, key,
+            ])
+        };
+        let ok = [
+            pad(&[0xAA, 0x55, 0x21, 0x03]),
+            pad(&[0xAA, 0x55, 0x21, 0x04]),
+            pad(&[0xAA, 0x55, 0x22, 0x00]),
+            key_desc(1, 0),
+            key_desc(5, 3),
+            dial_desc(1, 0),
+            pad(&[0x13, 0x41, 0x00, 0x00, 0x01]),
+            pad(&[0x13, 0x42, 0x00, 0x00, 0x0F]),
+            pad(&[0x13, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08]),
+        ];
+        for p in ok {
+            let got = classify(&p);
+            assert_ne!(got.class, SafetyClass::Deny, "{:02x?}", &p[..13]);
+            assert_eq!(got.group, Group::Pictures, "{:02x?}", &p[..13]);
+        }
+        let mut long = key_desc(1, 0);
+        long[13] = 1;
+        let mut bad_fixed = key_desc(1, 0);
+        bad_fixed[10] = 0x01;
+        let denied = [
+            key_desc(0, 0),
+            key_desc(6, 0),
+            key_desc(1, 4),
+            dial_desc(2, 0),
+            dial_desc(1, 1),
+            pad(&[0xAA, 0x55, 0x10, 0x00, 0x10, 0x00, 0, 0, 0, 0, 0x02, 1, 0]), // 4 KiB
+            long,
+            bad_fixed,
+            pad(&[0xAA, 0x55, 0x21, 0x03, 0x01]),
+            pad(&[0xAA, 0x55, 0x22, 0x01]),
+            pad(&[0xAA, 0x55, 0x7F]),
+            pad(&[0x13, 0x41, 0x00, 0x00, 0x02]),
+            pad(&[0x13, 0x41, 0x00, 0x00, 0x01, 0x01]),
+            pad(&[0x13, 0x42, 0x00, 0x00]),       // nothing selected
+            pad(&[0x13, 0x42, 0x00, 0x00, 0x10]), // bit 4
+            pad(&[0x13, 0x42, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0x01]),
+        ];
+        for p in denied {
+            assert_eq!(classify(&p).class, SafetyClass::Deny, "{:02x?}", &p[..13]);
+        }
     }
 
     #[test]

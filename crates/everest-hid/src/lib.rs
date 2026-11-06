@@ -36,6 +36,15 @@ pub enum Error {
     },
     #[error("the keyboard did not answer {:02x} {:02x}", .0[0], .0[1])]
     NoReply([u8; 2]),
+    #[error("refused to send {:?} ({}) on this channel: picture-transfer packets go only as feature reports, everything else only on the interrupt channel", .packet, .classification.name)]
+    WrongChannel {
+        packet: everest_proto::Packet,
+        classification: Classification,
+    },
+    #[error("refused: a picture transfer is in progress; nothing else may be sent until it ends")]
+    TransferInProgress,
+    #[error("refused to send an image chunk: no picture transfer is armed at that offset")]
+    NotArmed,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

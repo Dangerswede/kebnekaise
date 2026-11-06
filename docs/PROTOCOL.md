@@ -1,9 +1,10 @@
 # Mountain Everest Max: USB HID protocol
 
-Status: **Phase 2 draft** (2026-11-06). Read commands are verified by this
-project on Windows (tag [W]). The first lighting write is approved and
-waiting for its hardware test. Every entry carries a
-confidence tag and a source, so we can tell what we know from what we hope.
+Status: **Phase 3 draft** (2026-11-06). Read commands and all lighting
+commands are seen working by this project on Windows (tag [W]). The picture
+transfer (phase 3) is specified but has not been sent to hardware yet. Every
+entry carries a confidence tag and a source, so we can tell what we know from
+what we hope.
 
 This is our own description of the protocol, written for interoperability.
 No code from other projects is included (see [Sources and licences](#sources-and-licences)).
@@ -450,9 +451,10 @@ only; unplugging the keyboard should bring back the saved lighting.
 
 **This uses the same mechanism as the firmware update.** We implement exactly
 the sequence Base Camp uses, with fixed targets, and never send other target
-or sector values.
+or sector values. The full specification `everest-proto` implements is in
+[Pictures (phase 3)](#pictures-phase-3) below; this is the summary.
 
-Image format: RGB565, little-endian, row-major (row order [P]).
+Image format: RGB565, little-endian, row-major, top row first (row order [P]).
 
 | Target | Size | Bytes |
 |---|---|---|
@@ -482,6 +484,147 @@ Rules:
 - All other traffic must pause during a transfer (process-wide lock). [C]
 - After a picture reset the keyboard restores Windows-style shortcuts on the
   D keys (`Win+1`...). Phase 3 decides whether we neutralise them. [C]
+
+## Pictures (phase 3)
+
+This section is the specification `everest-proto` implements for phase 3
+(`crates/everest-proto/src/pictures.rs`), and `everest-core` drives
+(`crates/everest-core/src/pictures.rs`). Status on 2026-11-06: **dry run
+only.** No picture command has been sent to real hardware by this project.
+The first real upload needs the project owner's yes.
+
+Source: everest-mac (MIT), which recovered the sequence from Base Camp 1.9.10
+(`SDKDLL.dll`, `StartPicUpdate`) and verified it on a UK-ISO board with
+firmware 57. Tags are relative to that, as in the lighting section.
+
+### Pixel format
+
+- RGB565, 2 bytes per pixel, **little-endian**: the 16-bit value is
+  `R5 << 11 | G6 << 5 | B5`, low byte first. So pure red is `00 f8`, pure
+  green `e0 07`, pure blue `1f 00`. [C]
+- Row-major, **top row first**, left to right. [P] for us (everest-mac draws
+  into a top-down bitmap; orientation on the dial is still on our list).
+- No alpha. We composite transparent pixels onto black before converting. [P]
+- Display key: 72 x 72 = 10 368 bytes = 162 chunks exactly.
+  Dial: 240 x 204 = 97 920 bytes = 1 530 chunks exactly. [C]
+- Conversion from PNG/JPEG/GIF/BMP is done on the host. Fit modes:
+  `cover` (scale to fill, crop the centre; default), `contain` (scale to fit,
+  black borders), `stretch` (ignore the aspect ratio, as everest-mac does).
+  For GIFs the first frame is used.
+
+### Feature reports and the report ID
+
+All `aa 55` packets go over **SET_REPORT(Feature)** and are answered by
+**GET_REPORT(Feature)**, report ID 0, 64 bytes. hidapi takes
+`[00] + 64 bytes` for `send_feature_report`. For `get_feature_report` we pass a
+65-byte buffer with `00` first; whether the 64 data bytes come back at offset
+0 or 1 differs between backends. Every feature reply starts with `aa 55`, so
+the shim looks for `aa 55` at offset 0 or 1 and refuses anything else as "no
+reply". (Unit-tested; to be confirmed on Windows and Linux at the first
+upload with `--debug`.)
+
+### Sequence
+
+Preconditions, all checked **before the first `aa 55` packet**:
+
+1. No Base Camp or other tool on the keyboard (as for every write).
+2. Firmware is tested (`57`) or `--force` was given.
+3. The image converted to exactly the target size; byte count and checksum
+   computed.
+4. Display keys: profile 1..5, key 0..3 (D1..D4). Dial: the media dock is
+   attached (`11 14` byte 4) and the **dial is already in image mode**
+   (`11 14` byte 10 = `01`). We do not switch the dial mode in phase 3:
+   that is the `11 14` settings write, which is not implemented yet. The
+   user switches the dial to the image menu on the keyboard instead.
+5. Display keys: the numpad is attached (`11 14` byte 20).
+
+Then, as a process that holds the vendor interface alone:
+
+| Step | Host sends | Wait | Keyboard answers | Host does |
+|---|---|---|---|---|
+| 0 | `11 12`, `11 14`, `11 00` (normal session start) | | replies | checks above |
+| 1 | feature `aa 55 21 <04 keys / 03 dial>` | 80 ms, then GET | `aa 55 21 fa` | else wait 120 ms and resend, up to 40 times, then stop (nothing started) |
+| 2 | feature `aa 55 22 00` | 80 ms, then GET | `aa 55 22 fa` | as step 1 |
+| 3 | feature descriptor (below) | 150 ms, then GET | `aa 55 10 fa` | `fb`: wait 150 ms and **resend the descriptor**; `fe`: stop; give up after 90 s |
+| 4 | feature chunk `n` (64 image bytes) | 30 ms, then GET | `aa 55 10 fa <received: 3 LE>` | continue from `received`; `fb` or no answer: resend the same chunk; byte 9 = `fe`: done |
+| 5 | | 100 ms polls, up to 4 s | `aa 55 10 fa ... fe` | the final answer (flash commit) |
+| 6 | display keys only: `11 14` (read) | read up to 4 s | `ff aa` | "display refreshed"; not required |
+
+Steps 1 and 2 only select the target; nothing is erased until the
+descriptor is accepted in step 3. Before step 3 accepts, stopping is safe.
+**From the first `fa` to the descriptor on, the transfer is never abandoned
+on purpose**: it only ends when the keyboard reports done, when a write fails
+(keyboard unplugged), or after 600 answers in a row that do not move the
+byte count forward. In the last case the tool tells the user to unplug and
+replug the keyboard (the old picture area may be erased; the rest of the
+flash is untouched).
+
+Interrupting the program (Ctrl+C) during step 4 leaves the keyboard waiting
+for data. Recovery is unplug and replug. We do **not** use `aa 55 7f` for
+recovery (denied).
+
+Descriptor layout (13 bytes, rest zero):
+
+| Byte | Value |
+|---|---|
+| 0..2 | `aa 55 10` |
+| 3..5 | image size in bytes, 24-bit little-endian (`80 28 00` for a key, `80 7e 01` for the dial) |
+| 6..7 | checksum, 16-bit little-endian: sum of all image bytes mod 65536 |
+| 8..9 | `00 00` |
+| 10 | `02` |
+| 11 | profile 1..5 (dial: `01`) |
+| 12 | key 0..3 = D1..D4 (dial: `00`) |
+
+Reply layout (feature, 64 bytes): bytes 0..2 echo the command (`aa 55 21`,
+`aa 55 22` or `aa 55 10`); byte 3 is the status: `fa` accepted, `fb` busy,
+`fe` rejected. In step 4 bytes 4..6 are the bytes received so far (24-bit
+LE) and byte 9 is `fe` when the picture is complete. [C]
+
+Pictures are stored per profile: the descriptor's profile byte decides which
+of the five profiles' D1..D4 set is written. A real run uses the active
+profile unless `--profile` is given. [C]
+
+### Picture resets (interrupt channel)
+
+Approved by the project owner on 2026-10-30 for phase 3, as explicit user
+commands only:
+
+| Packet | Effect |
+|---|---|
+| `13 41 00 00 01` (rest zero) | Dial picture back to the factory logo. |
+| `13 42 00 00 <p1> <p2> <p3> <p4> <p5>` (rest zero) | D1..D4 pictures back to factory. One byte per profile 1..5, each a bitmap of keys: bit 0 = D1 ... bit 3 = D4 (`0f` = all four). Bits 4..7 must be zero. At least one bit set. |
+
+After `13 42` the keyboard also restores the factory D-key shortcuts
+(`Win+1`...). We do not neutralise them in phase 3; that needs the action
+write (`12 08` + `17 AA`), which is phase 4 work. No reply to the resets is
+documented; the tool drains the input queue afterwards and reports what it
+saw.
+
+### Allowlist rules
+
+| Packet | Accepted only when |
+|---|---|
+| `aa 55 21` | byte 3 is `03` or `04`, rest zero |
+| `aa 55 22` | byte 3 `00`, rest zero |
+| `aa 55 10` | size is exactly 10 368 with profile 1..5 and key 0..3, or exactly 97 920 with profile 1 and key 0; bytes 8..9 `00`, byte 10 `02`, rest zero |
+| `13 41` | exactly `13 41 00 00 01`, rest zero |
+| `13 42` | bytes 2..3 `00`, bytes 4..8 each ≤ `0f`, at least one non-zero, rest zero |
+| image chunk | not recognisable by content: the session only sends one while a transfer is armed (after the keyboard accepted a descriptor, and until the announced size has been acknowledged) |
+
+Anything else beginning `aa 55` is `DENY`, including `aa 55 7f`, `aa 55 21`
+with other targets, and every descriptor that does not match the table.
+A session opened with the `Pictures` policy may send `READ` packets and the
+`Pictures` group, nothing else: no lighting, settings, actions or remaps.
+
+### To find out at the first hardware test
+
+1. How `get_feature_report` returns report ID 0 on Windows (offset 0 or 1).
+2. Row order and orientation on the D keys and on the dial.
+3. Time per key picture on our board (everest-mac: about 20 s on 57).
+4. Does the dial upload need the dial in image mode (everest-mac switches it
+   first), and does the new picture show at once?
+5. Is `ff aa` seen after a key upload?
+6. Do the resets answer on the interrupt channel?
 
 ## Commands: DENY (never sent by this project)
 
@@ -534,7 +677,7 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 9. Full key-event layout in `01` reports.
 10. Dial "custom" menu entry (bit 7 of the menu mask) and dock button functions.
 11. Everest Core behaviour (no modules).
-12. Pixel row order and orientation of the dial image.
+12. Pixel row order and orientation of the dial image (see [Pictures (phase 3)](#pictures-phase-3)).
 
 ## Hardware observations
 

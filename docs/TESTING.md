@@ -131,3 +131,35 @@ with `--save` and a replug. Go back with `kebnekaise rgb static <colour>`.
 Record: are the right keys lit (Esc, WASD; on a Nordic board `iso-extra` is
 `<>|`, `iso-hash` is `'*`, `grave` is `§`), where are side LEDs 0 and 44,
 and does anything odd happen after the `14 A0` packets?
+
+## Phase 3: pictures, dry run
+
+No keyboard needed; nothing is opened or sent. The transfer runs against a
+simulated keyboard, so every packet up to the last chunk is shown. Use any
+PNG/JPEG/GIF/BMP; `--preview` writes the picture as the keyboard will show it
+(after the RGB565 rounding).
+
+```
+kebnekaise picture key 1 logo.png --dry-run --preview key1.png
+kebnekaise picture key 4 photo.jpg --fit contain --profile 2 --dry-run
+kebnekaise picture dial wallpaper.png --dry-run --preview dial.png
+kebnekaise picture reset-keys --keys "1,4" --dry-run
+kebnekaise picture reset-dial --dry-run
+```
+
+Record: do the previews look right (crop, colours), and do the descriptors
+match `docs/PROTOCOL.md`, "Pictures (phase 3)"?
+
+Real runs refuse with exit code 4 until the first picture write is approved.
+Plan for that test (one display key first, then the dial):
+
+1. Close Base Camp, replug the keyboard, `kebnekaise info`. Note the profile.
+2. `kebnekaise picture key 1 test.png --debug 2> key1-debug.txt`. Takes about
+   20 s. Do not unplug or press Ctrl+C while it runs; if it fails after
+   starting, unplug and replug.
+3. Look at D1: right picture, right way up, right colours? Then replug and
+   check that it stays.
+4. Switch the dial to its image menu on the keyboard, then
+   `kebnekaise picture dial test.png --debug 2> dial-debug.txt`.
+5. Optionally `picture reset-keys --keys 1` and `picture reset-dial` to go
+   back to the factory pictures.

@@ -12,3 +12,6 @@ everest-proto.workspace = true
 everest-hid.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+# Image decoding and scaling for phase 3 pictures. Pure Rust, only the
+# formats we accept.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
