@@ -4,13 +4,15 @@
 //! anything, `info` sends only the documented read commands.
 
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use everest_core::{hex, DeviceReport, Keyboard, WriteGate};
 use everest_hid::coexist::{find_conflicts, Conflict, ConflictReason};
 use everest_hid::discovery::{list_mountain_interfaces, select_command_channel};
 use everest_hid::hidapi::HidApi;
-use everest_hid::{HidInterface, HidTransport, InterfaceRole};
+use everest_hid::session::QueryOptions;
+use everest_hid::{HidInterface, HidTransport, InterfaceRole, TracingTransport};
 use everest_proto::DisplayBrightness;
 
 #[derive(Parser)]
@@ -49,6 +51,12 @@ enum Command {
         /// Read even if Base Camp or another tool seems to be using the keyboard.
         #[arg(long)]
         ignore_conflicts: bool,
+        /// Log every packet written and read to stderr.
+        #[arg(long)]
+        debug: bool,
+        /// How long to wait for each reply, in milliseconds.
+        #[arg(long, value_name = "MS", default_value_t = 800)]
+        timeout_ms: u64,
     },
 }
 
@@ -62,7 +70,19 @@ fn main() -> ExitCode {
             device,
             force,
             ignore_conflicts,
-        } => info(json, raw, device.as_deref(), force, ignore_conflicts),
+            debug,
+            timeout_ms,
+        } => info(
+            InfoOptions {
+                json,
+                raw,
+                force,
+                ignore_conflicts,
+                debug,
+                timeout_ms,
+            },
+            device.as_deref(),
+        ),
     };
     match result {
         Ok(code) => code,
@@ -117,13 +137,24 @@ fn role_text(i: &HidInterface) -> String {
     }
 }
 
-fn info(
+struct InfoOptions {
     json: bool,
     raw: bool,
-    device: Option<&str>,
     force: bool,
     ignore_conflicts: bool,
-) -> CliResult {
+    debug: bool,
+    timeout_ms: u64,
+}
+
+fn info(opts: InfoOptions, device: Option<&str>) -> CliResult {
+    let InfoOptions {
+        json,
+        raw,
+        force,
+        ignore_conflicts,
+        debug,
+        timeout_ms,
+    } = opts;
     let api = hid_api()?;
     let interfaces = list_mountain_interfaces(&api);
     let channel = match select_command_channel(&interfaces, device) {
@@ -144,9 +175,33 @@ fn info(
         }
     }
 
-    let transport = HidTransport::open(&api, &channel.path)?;
-    let mut keyboard = Keyboard::new(transport);
-    let report = keyboard.read_report(force)?;
+    if debug {
+        eprintln!("Opening {}", channel.path);
+    }
+    let transport = TracingTransport::new(HidTransport::open(&api, &channel.path)?, debug);
+    let mut keyboard = Keyboard::new(transport).with_query_options(QueryOptions {
+        timeout: Duration::from_millis(timeout_ms),
+        attempts: 3,
+    });
+    let report = match keyboard.read_report(force) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {e}");
+            let skipped = keyboard.skipped();
+            if skipped.is_empty() {
+                eprintln!("Nothing at all was received from the keyboard.");
+            } else {
+                eprintln!("Packets received that were not the expected reply:");
+                for p in skipped {
+                    eprintln!("  {}", hex(p));
+                }
+            }
+            if !debug {
+                eprintln!("Run again with --debug to see every packet.");
+            }
+            return Ok(ExitCode::from(1));
+        }
+    };
 
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -184,22 +239,25 @@ fn print_report(r: &DeviceReport, channel: &HidInterface, raw: bool) {
         "NOT tested"
     };
     println!("Firmware:      {} ({tested})", fw.version);
-    let verified = if r.layout.verified() {
-        ""
-    } else {
-        ", not yet verified on hardware"
-    };
-    let known = if r.layout_code_known {
-        ""
-    } else {
-        ", unknown code: Base Camp falls back to US"
-    };
-    println!(
-        "Layout:        {} ({:?}, code {}{known}{verified})",
-        r.layout,
-        r.layout.shape(),
-        r.layout_code
-    );
+    match (r.layout, r.layout_code) {
+        (Some(layout), Some(code)) => {
+            let verified = if layout.verified() {
+                ""
+            } else {
+                ", not yet verified on hardware"
+            };
+            let known = if r.layout_code_known {
+                ""
+            } else {
+                ", unknown code: Base Camp falls back to US"
+            };
+            println!(
+                "Layout:        {layout} ({:?}, code {code}{known}{verified})",
+                layout.shape()
+            );
+        }
+        _ => println!("Layout:        unknown (no answer to 11 12)"),
+    }
     println!("Modules:       {}", r.extended.modules.describe());
     match fw.active_profile {
         Some(p) => println!("Profile:       {p} of 5"),
@@ -237,7 +295,10 @@ fn print_report(r: &DeviceReport, channel: &HidInterface, raw: bool) {
         }
         println!("\nRaw replies:");
         println!("  11 00  {}", hex(&r.raw.firmware_info));
-        println!("  11 12  {}", hex(&r.raw.layout));
+        match &r.raw.layout {
+            Some(l) => println!("  11 12  {}", hex(l)),
+            None => println!("  11 12  (no answer)"),
+        }
         println!("  11 14  {}", hex(&r.raw.extended_info));
     }
 }
