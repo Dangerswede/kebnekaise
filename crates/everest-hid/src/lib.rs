@@ -19,7 +19,7 @@ pub use discovery::{HidInterface, InterfaceRole};
 /// Re-exported so callers use the same hidapi build (and backend) as this crate.
 pub use hidapi;
 pub use session::{Policy, Session};
-pub use transport::{HidTransport, Transport};
+pub use transport::{HidTransport, TracingTransport, Transport};
 
 use everest_proto::Classification;
 

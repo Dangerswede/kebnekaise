@@ -53,8 +53,10 @@ impl WriteGate {
 #[derive(Clone, Debug, Serialize)]
 pub struct DeviceReport {
     pub firmware: FirmwareInfo,
-    pub layout_code: u8,
-    pub layout: Layout,
+    /// `None` when the keyboard did not answer `11 12`. Some firmware
+    /// answers it only once the channel is awake, so it is not fatal.
+    pub layout_code: Option<u8>,
+    pub layout: Option<Layout>,
     pub layout_code_known: bool,
     pub extended: ExtendedInfo,
     pub write_gate: WriteGate,
@@ -66,7 +68,7 @@ pub struct DeviceReport {
 #[derive(Clone, Debug)]
 pub struct RawReplies {
     pub firmware_info: [u8; PACKET_SIZE],
-    pub layout: [u8; PACKET_SIZE],
+    pub layout: Option<[u8; PACKET_SIZE]>,
     pub extended_info: [u8; PACKET_SIZE],
 }
 
@@ -85,7 +87,7 @@ fn hex_replies<S: serde::Serializer>(
     use serde::ser::SerializeMap;
     let mut m = s.serialize_map(Some(3))?;
     m.serialize_entry("11 00", &hex(&raw.firmware_info))?;
-    m.serialize_entry("11 12", &hex(&raw.layout))?;
+    m.serialize_entry("11 12", &raw.layout.as_ref().map(|l| hex(l)))?;
     m.serialize_entry("11 14", &hex(&raw.extended_info))?;
     m.end()
 }
@@ -113,14 +115,21 @@ impl<T: Transport> Keyboard<T> {
     /// Reads firmware, layout and attached modules.
     ///
     /// The order follows what every known client does: `11 12` (which also
-    /// wakes the channel), `11 14`, then `11 00`.
+    /// wakes the channel), `11 14`, then `11 00`. A missing answer to `11 12`
+    /// is tolerated, as everest-mac does; the other two are required.
     pub fn read_report(&mut self, force: bool) -> Result<DeviceReport> {
         self.session.drain()?;
-        let layout_raw = self.session.query(&Packet::layout(), self.options)?;
+        let layout_raw = match self.session.query(&Packet::layout(), self.options) {
+            Ok(r) => Some(r),
+            Err(everest_hid::Error::NoReply(_)) => None,
+            Err(e) => return Err(e.into()),
+        };
         let extended_raw = self.session.query(&Packet::extended_info(), self.options)?;
         let firmware_raw = self.session.query(&Packet::firmware_info(), self.options)?;
 
-        let (layout_code, layout) = parse_layout(&layout_raw)?;
+        let parsed_layout = layout_raw.as_ref().map(|r| parse_layout(r)).transpose()?;
+        let layout_code = parsed_layout.map(|(code, _)| code);
+        let layout = parsed_layout.map(|(_, layout)| layout);
         let extended = ExtendedInfo::parse(&extended_raw)?;
         let firmware = FirmwareInfo::parse(&firmware_raw)?;
         Ok(DeviceReport {
@@ -128,7 +137,7 @@ impl<T: Transport> Keyboard<T> {
             firmware,
             layout_code,
             layout,
-            layout_code_known: Layout::is_known_code(layout_code),
+            layout_code_known: layout_code.is_some_and(Layout::is_known_code),
             extended,
             raw: RawReplies {
                 firmware_info: firmware_raw,
@@ -187,7 +196,7 @@ mod tests {
     fn full_report() {
         let mut kb = Keyboard::new(scripted(0x57));
         let r = kb.read_report(false).unwrap();
-        assert_eq!(r.layout, Layout::Nordic);
+        assert_eq!(r.layout, Some(Layout::Nordic));
         assert_eq!(r.firmware.active_profile, Some(3));
         assert_eq!(r.firmware.lighting_slot, LightingSlot::Wave);
         assert!(r.extended.modules.numpad && r.extended.modules.media_dock);
@@ -222,6 +231,27 @@ mod tests {
                 firmware: FirmwareVersion(0x55)
             }
         );
+    }
+
+    #[test]
+    fn missing_layout_reply_is_tolerated() {
+        let mut m = MockTransport::default();
+        m.always([0x11, 0x14], vec![reply(&[0x11, 0x14], &[(20, 1)])]);
+        m.always(
+            [0x11, 0x00],
+            vec![reply(&[0x11, 0x00], &[(4, 0x57), (10, 1)])],
+        );
+        let opts = QueryOptions {
+            timeout: Duration::from_millis(1),
+            attempts: 1,
+        };
+        let r = Keyboard::new(m)
+            .with_query_options(opts)
+            .read_report(false)
+            .unwrap();
+        assert_eq!(r.layout, None);
+        assert!(r.raw.layout.is_none());
+        assert_eq!(r.firmware.version, FirmwareVersion(0x57));
     }
 
     #[test]

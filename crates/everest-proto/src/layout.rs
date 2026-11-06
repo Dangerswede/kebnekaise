@@ -55,9 +55,10 @@ impl Layout {
         }
     }
 
-    /// Whether any source has verified this layout on hardware.
+    /// Whether the layout code has been seen on a real board of that layout
+    /// (UK by everest-mac, Nordic by this project).
     pub fn verified(self) -> bool {
-        matches!(self, Layout::Uk)
+        matches!(self, Layout::Uk | Layout::Nordic)
     }
 }
 

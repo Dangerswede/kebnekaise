@@ -77,7 +77,9 @@ impl Transport for HidTransport {
             .device
             .write(&buf)
             .map_err(|e| Error::Hid(e.to_string()))?;
-        if n < PACKET_SIZE {
+        // The Windows backend reports 0 when WriteFile completes
+        // synchronously, so only a partial count is an error.
+        if n != 0 && n < PACKET_SIZE {
             return Err(Error::Hid(format!(
                 "short write: {n} of {} bytes",
                 buf.len()
@@ -94,6 +96,64 @@ impl Transport for HidTransport {
             .read_timeout(&mut buf, ms)
             .map_err(|e| Error::Hid(e.to_string()))?;
         Ok(normalise_read(&buf, n))
+    }
+}
+
+/// Wraps a transport and, when enabled, logs every packet to stderr with
+/// the time since the wrapper was created. Used by `--debug`.
+pub struct TracingTransport<T> {
+    inner: T,
+    enabled: bool,
+    start: std::time::Instant,
+}
+
+impl<T: Transport> TracingTransport<T> {
+    pub fn new(inner: T, enabled: bool) -> Self {
+        TracingTransport {
+            inner,
+            enabled,
+            start: std::time::Instant::now(),
+        }
+    }
+
+    fn log(&self, what: &str, bytes: Option<&[u8]>) {
+        if !self.enabled {
+            return;
+        }
+        let ms = self.start.elapsed().as_millis();
+        match bytes {
+            Some(b) => {
+                // Up to the last non-zero byte, at least the command.
+                let end = b.iter().rposition(|&x| x != 0).map_or(2, |i| i + 1).max(2);
+                let hex: Vec<String> = b[..end].iter().map(|x| format!("{x:02x}")).collect();
+                eprintln!("[{ms:>6} ms] {what} {}", hex.join(" "));
+            }
+            None => eprintln!("[{ms:>6} ms] {what}"),
+        }
+    }
+}
+
+impl<T: Transport> Transport for TracingTransport<T> {
+    fn write_raw(&mut self, packet: &[u8; PACKET_SIZE]) -> Result<()> {
+        let result = self.inner.write_raw(packet);
+        match &result {
+            Ok(()) => self.log("write ok  ", Some(packet)),
+            Err(e) => self.log(&format!("write FAILED ({e})"), Some(packet)),
+        }
+        result
+    }
+
+    fn read_raw(&mut self, timeout: Duration) -> Result<Option<[u8; PACKET_SIZE]>> {
+        let result = self.inner.read_raw(timeout);
+        match &result {
+            Ok(Some(p)) => self.log("read      ", Some(p)),
+            Ok(None) => self.log(
+                &format!("read timeout after {} ms", timeout.as_millis()),
+                None,
+            ),
+            Err(e) => self.log(&format!("read FAILED ({e})"), None),
+        }
+        result
     }
 }
 

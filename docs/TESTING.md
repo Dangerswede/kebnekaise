@@ -19,6 +19,8 @@ both Linux and Windows and paste the output into the pull request or issue.
 1. Quit Base Camp (tray icon) and stop the service: `sc stop BaseCampService`
    (admin prompt). Check Task Manager for `Base Camp.exe`,
    `BaseCamp.Service.exe` and `MountainDisplayPadWorker.exe`.
+   Then **unplug and replug the keyboard**: right after Base Camp has been
+   stopped the keyboard may not answer at all until it is replugged.
 2. `kebnekaise list`: expect separate rows for MI_00..MI_03 collections and one
    `commands (vendor 0xFF00)` row.
 3. `kebnekaise info --raw` and `kebnekaise info --json`.
