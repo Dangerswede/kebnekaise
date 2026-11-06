@@ -99,6 +99,32 @@ impl Transport for HidTransport {
     }
 }
 
+/// A transport that never touches a device: writes are recorded, reads
+/// time out. Used by `--dry-run`, so a planned command still goes through
+/// the session's allowlist without anything reaching the keyboard.
+#[derive(Debug, Default)]
+pub struct DryRunTransport {
+    written: Vec<[u8; PACKET_SIZE]>,
+}
+
+impl DryRunTransport {
+    /// Everything that would have been written, in order.
+    pub fn written(&self) -> &[[u8; PACKET_SIZE]] {
+        &self.written
+    }
+}
+
+impl Transport for DryRunTransport {
+    fn write_raw(&mut self, packet: &[u8; PACKET_SIZE]) -> Result<()> {
+        self.written.push(*packet);
+        Ok(())
+    }
+
+    fn read_raw(&mut self, _timeout: Duration) -> Result<Option<[u8; PACKET_SIZE]>> {
+        Ok(None)
+    }
+}
+
 /// Wraps a transport and, when enabled, logs every packet to stderr with
 /// the time since the wrapper was created. Used by `--debug`.
 pub struct TracingTransport<T> {

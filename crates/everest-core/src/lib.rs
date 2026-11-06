@@ -1,7 +1,11 @@
 //! High-level access to the Mountain Everest Max.
 //!
-//! Phase 1 is read-only: [`Keyboard`] opens a [`Session`] with
+//! [`Keyboard`] is read-only: it opens a [`Session`] with
 //! [`Policy::ReadOnly`] and only sends `11 00`, `11 12` and `11 14`.
+//! [`lighting`] builds phase 2 lighting plans, which can so far only be
+//! dry-run (nothing is sent to the keyboard).
+
+pub mod lighting;
 
 use everest_hid::session::QueryOptions;
 use everest_hid::{Policy, Session, Transport};

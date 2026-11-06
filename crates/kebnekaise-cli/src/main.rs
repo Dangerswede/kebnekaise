@@ -1,19 +1,24 @@
 //! `kebnekaise`: command-line tool for the Mountain Everest Max.
 //!
-//! Phase 1 is read-only: `list` enumerates HID interfaces without opening
-//! anything, `info` sends only the documented read commands.
+//! `list` enumerates HID interfaces without opening anything, `info` sends
+//! only the documented read commands. `rgb` (phase 2) only has a dry run so
+//! far: it prints the packets it would send and opens no device.
 
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use everest_core::lighting::{trimmed, LightingPlan};
 use everest_core::{hex, DeviceReport, Keyboard, WriteGate};
 use everest_hid::coexist::{find_conflicts, Conflict, ConflictReason};
 use everest_hid::discovery::{list_mountain_interfaces, select_command_channel};
 use everest_hid::hidapi::HidApi;
 use everest_hid::session::QueryOptions;
 use everest_hid::{HidInterface, HidTransport, InterfaceRole, TracingTransport};
-use everest_proto::DisplayBrightness;
+use everest_proto::lighting::{CustomFrame, Rgb};
+use everest_proto::{
+    ledmap, ColorMode, Direction, DisplayBrightness, Effect, EffectSettings, LayoutShape,
+};
 
 #[derive(Parser)]
 #[command(
@@ -58,6 +63,116 @@ enum Command {
         #[arg(long, value_name = "MS", default_value_t = 800)]
         timeout_ms: u64,
     },
+    /// Lighting (phase 2). Dry run only for now: prints the packets.
+    Rgb {
+        #[command(subcommand)]
+        command: RgbCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum RgbCommand {
+    /// One colour on every key (the built-in static effect).
+    Static {
+        /// Colour as RRGGBB.
+        color: String,
+        #[command(flatten)]
+        effect: EffectArgs,
+        #[command(flatten)]
+        common: RgbCommon,
+    },
+    /// A built-in effect: wave, tornado, breathing, reactive, matrix, yeti, off.
+    Effect {
+        /// Effect name.
+        name: String,
+        /// Colour mode: single, dual, quad, rainbow, key-and-background.
+        /// Default: the effect's first mode (rainbow for wave/tornado).
+        #[arg(long)]
+        mode: Option<String>,
+        /// Colours as RRGGBB, comma separated or repeated.
+        #[arg(long = "color", value_delimiter = ',')]
+        colors: Vec<String>,
+        /// Speed 1 (slowest) to 5 (fastest). Default 3.
+        #[arg(long)]
+        speed: Option<u8>,
+        /// Wave: right, down, left, up. Tornado: cw, ccw.
+        #[arg(long)]
+        direction: Option<String>,
+        #[command(flatten)]
+        effect: EffectArgs,
+        #[command(flatten)]
+        common: RgbCommon,
+    },
+    /// Per-key colours (custom mode, slot 6).
+    Keys {
+        /// Colour of every key not set with --key.
+        #[arg(long, default_value = "000000")]
+        all: String,
+        /// Colour of the side strips (all 45 LEDs).
+        #[arg(long, default_value = "000000")]
+        side: String,
+        /// NAME=RRGGBB, repeatable. Names: see `kebnekaise rgb key-names`;
+        /// side LEDs are side0..side44.
+        #[arg(long = "key", value_name = "NAME=RRGGBB")]
+        keys: Vec<String>,
+        /// Physical shape. Nordic, UK, German and the other ISO layouts are iso.
+        #[arg(long, value_enum, default_value_t = ShapeArg::Iso)]
+        shape: ShapeArg,
+        /// Brightness 0..100 (applied to the colours).
+        #[arg(long, default_value_t = 100)]
+        brightness: u8,
+        /// Save the picture to flash (slot 6) so it survives a replug.
+        #[arg(long)]
+        save: bool,
+        #[command(flatten)]
+        common: RgbCommon,
+    },
+    /// List the key names `rgb keys --key` accepts, with their LED index.
+    KeyNames {
+        #[arg(long, value_enum, default_value_t = ShapeArg::Iso)]
+        shape: ShapeArg,
+    },
+}
+
+#[derive(Args)]
+struct EffectArgs {
+    /// Brightness 0..100.
+    #[arg(long, default_value_t = 100)]
+    brightness: u8,
+    /// Do not save to flash (`13 55`). Base Camp always saves; whether an
+    /// unsaved effect survives a replug is not known yet.
+    #[arg(long)]
+    no_save: bool,
+}
+
+#[derive(Args)]
+struct RgbCommon {
+    /// Print the packets instead of sending them. Required for now:
+    /// lighting writes have not been approved on real hardware yet.
+    #[arg(long)]
+    dry_run: bool,
+    /// Profile 1..5 to plan for. A real run will read the active profile
+    /// from the keyboard instead.
+    #[arg(long, default_value_t = 1)]
+    profile: u8,
+    /// Print JSON instead of text.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum ShapeArg {
+    Iso,
+    Ansi,
+}
+
+impl From<ShapeArg> for LayoutShape {
+    fn from(s: ShapeArg) -> Self {
+        match s {
+            ShapeArg::Iso => LayoutShape::Iso,
+            ShapeArg::Ansi => LayoutShape::Ansi,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -83,6 +198,7 @@ fn main() -> ExitCode {
             },
             device.as_deref(),
         ),
+        Command::Rgb { command } => rgb(command),
     };
     match result {
         Ok(code) => code,
@@ -304,4 +420,142 @@ fn print_report(r: &DeviceReport, channel: &HidInterface, raw: bool) {
         }
         println!("  11 14  {}", hex(&r.raw.extended_info));
     }
+}
+
+fn rgb(command: RgbCommand) -> CliResult {
+    let (plan, common) = match command {
+        RgbCommand::KeyNames { shape } => {
+            for (name, led) in ledmap::key_names(shape.into()) {
+                println!("{name:<12} {led:>3}");
+            }
+            println!("side0..side44  side strips");
+            return Ok(ExitCode::SUCCESS);
+        }
+        RgbCommand::Static {
+            color,
+            effect,
+            common,
+        } => {
+            let settings = EffectSettings::new(
+                Effect::Static,
+                None,
+                vec![color.parse()?],
+                None,
+                effect.brightness,
+                None,
+            )?;
+            (
+                LightingPlan::effect(common.profile, &settings, !effect.no_save)?,
+                common,
+            )
+        }
+        RgbCommand::Effect {
+            name,
+            mode,
+            colors,
+            speed,
+            direction,
+            effect,
+            common,
+        } => {
+            let which: Effect = name.parse()?;
+            if which == Effect::Static {
+                return Err("use `kebnekaise rgb static RRGGBB` for a static colour".into());
+            }
+            let mode = mode.map(|m| m.parse::<ColorMode>()).transpose()?;
+            let colors = colors
+                .iter()
+                .map(|c| c.parse::<Rgb>())
+                .collect::<Result<Vec<_>, _>>()?;
+            let direction = direction.map(|d| d.parse::<Direction>()).transpose()?;
+            let settings =
+                EffectSettings::new(which, mode, colors, speed, effect.brightness, direction)?;
+            (
+                LightingPlan::effect(common.profile, &settings, !effect.no_save)?,
+                common,
+            )
+        }
+        RgbCommand::Keys {
+            all,
+            side,
+            keys,
+            shape,
+            brightness,
+            save,
+            common,
+        } => {
+            // Only LEDs that exist on this shape get --all; the unused
+            // slots of the 152-slot frame stay black.
+            let mut frame = CustomFrame::filled(Rgb::BLACK, side.parse()?);
+            let all: Rgb = all.parse()?;
+            for (_, led) in ledmap::key_names(shape.into()) {
+                frame.keys[usize::from(led)] = all;
+            }
+            for spec in &keys {
+                let (name, color) = spec
+                    .split_once('=')
+                    .ok_or_else(|| format!("--key {spec:?}: expected NAME=RRGGBB"))?;
+                let color: Rgb = color.parse()?;
+                match ledmap::side_index(name) {
+                    Some(i) => frame.side[i] = color,
+                    None => frame.keys[usize::from(ledmap::key_index(name, shape.into())?)] = color,
+                }
+            }
+            (
+                LightingPlan::custom(common.profile, &frame, brightness, save)?,
+                common,
+            )
+        }
+    };
+
+    if !common.dry_run {
+        eprintln!("error: lighting commands are not enabled on real hardware yet.");
+        eprintln!(
+            "They have not been approved for this keyboard. Add --dry-run to see the packets."
+        );
+        return Ok(ExitCode::from(4));
+    }
+
+    let steps = plan.dry_run()?;
+    if common.json {
+        let out = serde_json::json!({
+            "dry_run": true,
+            "profile": plan.expected.profile,
+            "expected": plan.expected,
+            "saves_to_flash": plan.saves,
+            "packets": steps,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!(
+        "Dry run for profile {} (nothing is sent to the keyboard):\n",
+        plan.expected.profile
+    );
+    for (i, s) in steps.iter().enumerate() {
+        println!(
+            "{:>2}. {:<26} {:<8} wait {:>3} ms  {}",
+            i + 1,
+            s.classification.name,
+            format!("{:?}", s.classification.class).to_lowercase(),
+            s.wait_after.as_millis(),
+            hex(trimmed(&s.bytes)),
+        );
+    }
+    println!(
+        "\nAll {} packets pass the lighting allowlist. About {} ms in total.",
+        steps.len(),
+        plan.duration().as_millis()
+    );
+    println!(
+        "A real run would then read 11 00 and expect profile {}, lighting slot {}.",
+        plan.expected.profile, plan.expected.lighting_slot
+    );
+    if plan.saves {
+        println!("The last packet (13 55) saves the slot to the keyboard's flash.");
+    } else {
+        println!("Not saved to flash.");
+    }
+    Ok(ExitCode::SUCCESS)
 }

@@ -1,21 +1,31 @@
 use std::time::{Duration, Instant};
 
-use everest_proto::{is_reply_to, Packet, SafetyClass, PACKET_SIZE};
+use everest_proto::{is_reply_to, Classification, Group, Packet, SafetyClass, PACKET_SIZE};
 
 use crate::transport::Transport;
 use crate::{Error, Result};
 
-/// Which safety classes a session may send.
+/// Which packets a session may send.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Policy {
     /// Phase 1: queries only.
     ReadOnly,
+    /// Phase 2: queries plus the lighting commands (profile/slot switch,
+    /// effects, per-key colours, saving a lighting slot). Nothing else:
+    /// no display settings, actions, remaps, pictures or resets.
+    ///
+    /// Only for sessions whose writes were cleared by the firmware gate.
+    Lighting,
 }
 
 impl Policy {
-    pub fn allows(self, class: SafetyClass) -> bool {
-        match self {
-            Policy::ReadOnly => class == SafetyClass::Read,
+    pub fn allows(self, c: &Classification) -> bool {
+        match (self, c.class) {
+            (_, SafetyClass::Read) => true,
+            (Policy::Lighting, SafetyClass::Volatile | SafetyClass::Persist) => {
+                c.group == Group::Lighting
+            }
+            _ => false,
         }
     }
 }
@@ -65,7 +75,7 @@ impl<T: Transport> Session<T> {
     /// Sends one packet if the policy allows its safety class.
     pub fn send(&mut self, packet: &Packet) -> Result<()> {
         let classification = packet.classification();
-        if !self.policy.allows(classification.class) {
+        if !self.policy.allows(&classification) {
             return Err(Error::Refused {
                 packet: packet.clone(),
                 classification,
@@ -168,16 +178,50 @@ mod tests {
         assert_eq!(s.into_transport().written().len(), 3);
     }
 
+    fn pad(prefix: &[u8]) -> [u8; PACKET_SIZE] {
+        reply(prefix)
+    }
+
     #[test]
     fn read_only_policy() {
-        assert!(Policy::ReadOnly.allows(SafetyClass::Read));
-        for c in [
-            SafetyClass::Volatile,
-            SafetyClass::Persist,
-            SafetyClass::Transfer,
-            SafetyClass::Deny,
+        assert!(Policy::ReadOnly.allows(&Packet::firmware_info().classification()));
+        for p in [
+            pad(&[0x14, 0x00, 0x00, 0x00, 0x01, 0x00]),
+            pad(&[0x13, 0x55, 0x00, 0x00, 0x00]),
+            pad(&[0x11, 0x14, 0x00, 0x01]),
+            pad(&[0xAA, 0x55, 0x21, 0x04]),
+            pad(&[0x13, 0x40]),
         ] {
-            assert!(!Policy::ReadOnly.allows(c));
+            assert!(!Policy::ReadOnly.allows(&everest_proto::classify(&p)));
+        }
+    }
+
+    #[test]
+    fn lighting_policy_allows_only_lighting() {
+        let allowed = [
+            pad(&[0x11, 0x00]),
+            pad(&[0x14, 0x00, 0x00, 0x00, 0x01, 0x00]),
+            pad(&[0x13, 0x55, 0x00, 0x00, 0x06]),
+            pad(&[0x14, 0x2C, 0x00, 0x00, 0xFF, 0x64]),
+            pad(&[0x14, 0xA0, 0x00, 0x01]),
+        ];
+        for p in allowed {
+            let c = everest_proto::classify(&p);
+            assert!(Policy::Lighting.allows(&c), "{}", c.name);
+        }
+        let refused = [
+            pad(&[0x11, 0x14, 0x00, 0x01]),             // settings write
+            pad(&[0x11, 0x81, 0x00, 0x00, 0x10]),       // dial metric
+            pad(&[0x14, 0x20, 0x04, 0x00, 0x05]),       // key remap
+            pad(&[0x12, 0x08, 0x00, 0x01]),             // action slot
+            pad(&[0x13, 0x42, 0x00, 0x00, 0x0F]),       // picture reset
+            pad(&[0xAA, 0x55, 0x21, 0x04]),             // picture transfer
+            pad(&[0x13, 0x40, 0x00, 0x00, 0x01]),       // flash reset
+            pad(&[0x14, 0x00, 0x00, 0x00, 0x07, 0x00]), // malformed switch
+        ];
+        for p in refused {
+            let c = everest_proto::classify(&p);
+            assert!(!Policy::Lighting.allows(&c), "{}", c.name);
         }
     }
 }

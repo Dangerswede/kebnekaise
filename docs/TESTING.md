@@ -35,3 +35,20 @@ both Linux and Windows and paste the output into the pull request or issue.
 - Active profile and lighting slot: switch profile on the keyboard
   (Fn shortcut) and run `info` again.
 - The three raw replies. They fill the unknown bytes in `PROTOCOL.md`.
+
+## Phase 2: lighting dry run
+
+No keyboard needed; nothing is opened or sent. Check that the commands run
+on both systems and that the packets look like `docs/PROTOCOL.md`,
+"Lighting (phase 2)":
+
+```
+kebnekaise rgb static ff0000 --dry-run
+kebnekaise rgb effect wave --dry-run
+kebnekaise rgb effect breathing --mode dual --color ff0000,0000ff --dry-run
+kebnekaise rgb keys --all 101010 --key esc=ff0000 --dry-run
+kebnekaise rgb static ff0000          # must refuse with exit code 4
+```
+
+The first real lighting write is only run after the project owner has
+approved it (see "To find out at the first hardware test" in PROTOCOL.md).
