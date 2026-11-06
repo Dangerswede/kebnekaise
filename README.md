@@ -25,9 +25,9 @@ Lighting. These write to the keyboard:
 ```
 kebnekaise rgb static ff8000 --no-save   # RAM only; replug to undo
 kebnekaise rgb static ff8000             # saved to flash (13 55), stays after replug
-kebnekaise rgb effect wave --mode dual --color ff0000,0000ff --speed 4
+kebnekaise rgb effect wave --mode dual --color "ff0000,0000ff" --speed 4
 kebnekaise rgb effect breathing --color 00ffaa --no-save
-kebnekaise rgb effect reactive --color ffffff,000040
+kebnekaise rgb effect reactive --color "ffffff,000040"
 ```
 
 Dry run (opens no device, sends nothing; works for every `rgb` command):
