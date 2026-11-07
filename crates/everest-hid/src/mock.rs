@@ -61,4 +61,15 @@ impl Transport for MockTransport {
     fn read_raw(&mut self, _timeout: Duration) -> Result<Option<[u8; PACKET_SIZE]>> {
         Ok(self.inbox.pop_front())
     }
+
+    /// Feature reports are recorded in `written` too; there is no answer.
+    /// Use `everest_core::pictures::SimulatedKeyboard` for transfers.
+    fn send_feature_raw(&mut self, packet: &[u8; PACKET_SIZE]) -> Result<()> {
+        self.written.push(*packet);
+        Ok(())
+    }
+
+    fn get_feature_raw(&mut self) -> Result<Option<[u8; PACKET_SIZE]>> {
+        Ok(None)
+    }
 }

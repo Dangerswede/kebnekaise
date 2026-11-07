@@ -11,6 +11,7 @@ mod layout;
 pub mod ledmap;
 pub mod lighting;
 mod packet;
+pub mod pictures;
 
 pub use classify::{classify, Classification, Group, SafetyClass};
 pub use info::{
@@ -20,6 +21,9 @@ pub use info::{
 pub use layout::{Layout, LayoutShape};
 pub use lighting::{ColorMode, CustomFrame, Direction, Effect, EffectSettings, LightingError, Rgb};
 pub use packet::{is_reply_to, Packet, PACKET_SIZE};
+pub use pictures::{
+    ImageChunk, KeyResetMask, Picture, PictureError, PictureTarget, TransferReply, TransferStatus,
+};
 
 /// USB vendor ID used by Mountain.
 pub const VENDOR_ID: u16 = 0x3282;

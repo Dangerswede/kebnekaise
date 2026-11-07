@@ -5,6 +5,7 @@ use crate::lighting::{
     put_triplets, CustomFrame, EffectSettings, LightingError, Rgb, KEYS_PER_PACKET, PROFILES,
     SIDE_PACKET_SIZES,
 };
+use crate::pictures::{KeyResetMask, Picture};
 
 /// Size of every packet on the vendor interface, without a report ID.
 pub const PACKET_SIZE: usize = 64;
@@ -109,6 +110,53 @@ impl Packet {
             out.push(Self::side_colors(ix, frame.side_chunk(ix)));
         }
         Ok(out)
+    }
+
+    /// Feature `aa 55 21 <target>`: select the picture target (`04`
+    /// display keys, `03` dial). Selects only; erases nothing.
+    pub fn picture_select_target(target: crate::PictureTarget) -> Self {
+        Self::from_prefix(&[0xAA, 0x55, 0x21, target.target_byte()])
+    }
+
+    /// Feature `aa 55 22 00`: confirm the selected picture target.
+    pub fn picture_confirm_target() -> Self {
+        Self::from_prefix(&[0xAA, 0x55, 0x22, 0x00])
+    }
+
+    /// Feature `aa 55 10 <size:3 LE> <checksum:2 LE> 00 00 02 <profile>
+    /// <key>`: announce a picture. Once the keyboard accepts it, the
+    /// picture's chunks must follow until it reports done.
+    pub fn picture_descriptor(picture: &Picture) -> Self {
+        let size = picture.bytes().len();
+        let [c0, c1] = picture.checksum().to_le_bytes();
+        let (profile, key) = picture.target().descriptor_slot();
+        Self::from_prefix(&[
+            0xAA,
+            0x55,
+            0x10,
+            size as u8,
+            (size >> 8) as u8,
+            (size >> 16) as u8,
+            c0,
+            c1,
+            0x00,
+            0x00,
+            0x02,
+            profile,
+            key,
+        ])
+    }
+
+    /// `13 41 00 00 01`: dial picture back to the factory logo.
+    pub fn reset_dial_picture() -> Self {
+        Self::from_prefix(&[0x13, 0x41, 0x00, 0x00, 0x01])
+    }
+
+    /// `13 42 00 00 <p1..p5>`: display-key pictures back to factory.
+    pub fn reset_key_pictures(mask: &KeyResetMask) -> Self {
+        let mut p = Self::from_prefix(&[0x13, 0x42, 0x00, 0x00]);
+        p.0[4..9].copy_from_slice(&mask.keys);
+        p
     }
 
     /// The command family and command, bytes 0..2. Replies echo them.
@@ -236,6 +284,44 @@ mod tests {
         );
         assert_eq!(p[10].as_bytes()[7 + 18..7 + 21], [4, 5, 6]);
         assert_eq!(format!("{:?}", p[8]), "Packet[14 2d 0a 00 00 ff]");
+    }
+
+    #[test]
+    fn picture_builders_pass_the_classifier() {
+        use crate::classify::Group;
+        use crate::pictures::{PictureTarget, DIAL_BYTES, KEY_BYTES};
+
+        let key =
+            Picture::from_rgb565(PictureTarget::key(2, 4).unwrap(), vec![1; KEY_BYTES]).unwrap();
+        let dial = Picture::from_rgb565(PictureTarget::Dial, vec![0xFF; DIAL_BYTES]).unwrap();
+        assert_eq!(
+            format!("{:?}", Packet::picture_descriptor(&key)),
+            "Packet[aa 55 10 80 28 00 80 28 00 00 02 02 03]"
+        );
+        let sum = (0xFFu32 * DIAL_BYTES as u32 % 65_536) as u16;
+        let [lo, hi] = sum.to_le_bytes();
+        assert_eq!(
+            Packet::picture_descriptor(&dial).as_bytes()[..13],
+            [0xAA, 0x55, 0x10, 0x80, 0x7E, 0x01, lo, hi, 0, 0, 0x02, 0x01, 0x00]
+        );
+        let mask = KeyResetMask::for_profile(1, &[1, 2, 3, 4]).unwrap();
+        for p in [
+            Packet::picture_select_target(key.target()),
+            Packet::picture_select_target(PictureTarget::Dial),
+            Packet::picture_confirm_target(),
+            Packet::picture_descriptor(&key),
+            Packet::picture_descriptor(&dial),
+            Packet::reset_dial_picture(),
+            Packet::reset_key_pictures(&mask),
+        ] {
+            let c = p.classification();
+            assert_eq!(c.group, Group::Pictures, "{p:?} {}", c.name);
+            assert_ne!(c.class, SafetyClass::Deny, "{p:?}");
+        }
+        assert_eq!(
+            format!("{:?}", Packet::reset_key_pictures(&mask)),
+            "Packet[13 42 00 00 0f]"
+        );
     }
 
     #[test]
