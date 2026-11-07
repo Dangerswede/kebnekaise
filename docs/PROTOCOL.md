@@ -508,9 +508,14 @@ firmware 57. Tags are relative to that, as in the lighting section.
 - Row-major, **top row first**, left to right. [W] on a display key and on
   the dial (2026-11-07: arrow test pictures came out upright, not mirrored,
   with the right colours).
-- **The dial screen is round.** Only a circle of the 240 x 204 picture is
-  visible: the corners are cut off (in the test, the 30 x 30 corner squares
-  were hidden or half visible). Keep important content in the middle. [W]
+- **The dial screen is round, 240 pixels across, and the picture sits at its
+  top.** The visible circle has its centre at (120, 120) in picture
+  coordinates, radius 120: it touches the picture's top, left and right
+  edges, the picture's bottom row (y 203) is cut by the circle, and the
+  bottom 36 rows of the circle have no picture (dark). Confirmed with a
+  calibration grid on 2026-11-07: the circle centred at (120, 120) with
+  radius 120 followed the screen edge; one centred at (120, 102) did not.
+  `--preview` draws the dial as the round screen. [W]
 - No alpha. We composite transparent pixels onto black before converting. [P]
 - Display key: 72 x 72 = 10 368 bytes = 162 chunks exactly.
   Dial: 240 x 204 = 97 920 bytes = 1 530 chunks exactly. [C]

@@ -104,14 +104,43 @@ pub fn convert(
     Ok((convert_image(&img, target, fit)?, size))
 }
 
+/// Diameter of the round dial screen. The 240 x 204 picture sits at the top
+/// of it: the visible circle has its centre at (120, 120), so the picture's
+/// corners are cut off and the bottom 36 rows of the circle stay dark
+/// (seen on hardware 2026-11-07, see `docs/PROTOCOL.md`).
+pub const DIAL_SCREEN_DIAMETER: u32 = 240;
+
+/// True when pixel (x, y) of a dial picture lies on the round screen.
+pub fn dial_pixel_visible(x: u32, y: u32) -> bool {
+    let r = f64::from(DIAL_SCREEN_DIAMETER) / 2.0;
+    let dx = f64::from(x) + 0.5 - r;
+    let dy = f64::from(y) + 0.5 - r;
+    dx * dx + dy * dy <= r * r
+}
+
 /// Writes the picture as the keyboard will show it (after RGB565
 /// rounding), for checking before an upload. The format follows the
-/// file extension (PNG recommended).
+/// file extension (PNG recommended). A dial preview is the whole round
+/// screen (240 x 240): what lies outside the circle is grey, the strip
+/// below the picture black.
 pub fn save_preview(picture: &Picture, path: &Path) -> Result<(), image::ImageError> {
     let t = picture.target();
     let img = RgbImage::from_raw(t.width(), t.height(), picture.to_rgb8())
         .expect("picture size matches its target");
-    img.save(path)
+    if t != PictureTarget::Dial {
+        return img.save(path);
+    }
+    let d = DIAL_SCREEN_DIAMETER;
+    let screen = RgbImage::from_fn(d, d, |x, y| {
+        if !dial_pixel_visible(x, y) {
+            image::Rgb([96, 96, 96])
+        } else if y < t.height() {
+            *img.get_pixel(x, y)
+        } else {
+            image::Rgb([0, 0, 0])
+        }
+    });
+    screen.save(path)
 }
 
 /// Timing and retry limits of the transfer. The defaults follow
@@ -684,8 +713,12 @@ mod tests {
         let preview = dir.join("preview.png");
         save_preview(&pic, &preview).unwrap();
         let back = image::open(&preview).unwrap().to_rgb8();
-        assert_eq!(back.dimensions(), (240, 204));
-        assert_eq!(back.get_pixel(10, 10).0, [0, 255, 0]);
+        assert_eq!(back.dimensions(), (240, 240));
+        assert_eq!(back.get_pixel(120, 10).0, [0, 255, 0]);
+        assert_eq!(back.get_pixel(0, 0).0, [96, 96, 96]); // outside the circle
+        assert_eq!(back.get_pixel(120, 220).0, [0, 0, 0]); // below the picture
+        assert!(dial_pixel_visible(120, 0) && dial_pixel_visible(0, 120));
+        assert!(!dial_pixel_visible(0, 0) && !dial_pixel_visible(239, 203));
         assert!(convert(&dir.join("missing.png"), PictureTarget::Dial, Fit::Cover).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }

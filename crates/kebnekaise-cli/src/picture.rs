@@ -346,7 +346,10 @@ fn dry_run(request: &Request, common: &PictureCommon) -> CliResult {
         println!("A display-key picture takes about 15-20 s on firmware 57.");
     } else {
         println!("The dial must show its image menu; the real run checks that first.");
-        println!("The dial screen is round: the corners of the 240 x 204 picture are not visible.");
+        println!(
+            "The dial screen is round (240 across, centre at x 120, y 120): the picture's corners \
+             are not visible. --preview shows the round screen."
+        );
     }
     Ok(ExitCode::SUCCESS)
 }
