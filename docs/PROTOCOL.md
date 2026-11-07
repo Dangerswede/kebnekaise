@@ -492,8 +492,9 @@ Rules:
 This section is the specification `everest-proto` implements for phase 3
 (`crates/everest-proto/src/pictures.rs`), and `everest-core` drives
 (`crates/everest-core/src/pictures.rs`). Status on 2026-11-07: display-key
-uploads approved (2026-11-06) and seen working on D1 [W]; the dial upload and
-the picture resets are dry run only.
+uploads approved (2026-11-06) and seen working on D1 [W]; the dial upload
+approved 2026-11-07, waiting for its first test; the picture resets are dry
+run only.
 
 Source: everest-mac (MIT), which recovered the sequence from Base Camp 1.9.10
 (`SDKDLL.dll`, `StartPicUpdate`) and verified it on a UK-ISO board with
@@ -549,7 +550,7 @@ Then, as a process that holds the vendor interface alone:
 | 1 | feature `aa 55 21 <04 keys / 03 dial>` | 80 ms, then GET | `aa 55 21 fa` | else wait 120 ms and resend, up to 40 times, then stop (nothing started) |
 | 2 | feature `aa 55 22 00` | 80 ms, then GET | `aa 55 22 fa` | as step 1 |
 | 3 | feature descriptor (below) | 150 ms, then GET | `aa 55 10 fa` | `fb`: wait 150 ms and **resend the descriptor**; `fe`: stop; give up after 90 s |
-| 4 | feature chunk `n` (64 image bytes) | 30 ms, then GET | `aa 55 10 fa <received: 3 LE>` | continue from `received`; `fb` or no answer: resend the same chunk |
+| 4 | feature chunk `n` (64 image bytes) | 30 ms, then GET | `aa 55 10 fa <received: 3 LE>` | continue from `received`; `fb`: GET again every 10 ms, up to 10 times (no send); if the count still has not moved, or no answer: resend the same chunk |
 | 5 | | 100 ms polls, up to 4 s, only if step 4 did not already end with it | `aa 55 10 fa <size> <checksum> fa` (fw 57) or `... fe` at byte 9 | the final answer: size and checksum confirmed |
 | 6 | display keys only: `11 14` (read) | read up to 1 s | `ff aa` | "display refreshed"; not required (not seen on fw 57) |
 
@@ -594,6 +595,10 @@ matches ours. [W]
 move, and re-sending the same chunk is correct. On firmware 57 almost every
 chunk was answered `fb` the first time and `fa` on the re-send (it seems to
 need more than 30 ms per chunk), and the picture arrived intact. [W]
+From the log alone we cannot tell whether the first send was dropped or
+taken and acknowledged late. Since 2026-11-07 the tool first re-reads the
+answer (GET only) after a `fb` and re-sends only if the count still has not
+moved; the next log will show which case it is.
 
 Pictures are stored per profile: the descriptor's profile byte decides which
 of the five profiles' D1..D4 set is written. A real run uses the active

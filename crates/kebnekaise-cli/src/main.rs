@@ -4,7 +4,7 @@
 //! only the documented read commands. `rgb` (phase 2) sets the lighting;
 //! with `--dry-run` it only prints the packets and opens no device.
 //! `picture` (phase 3) converts images for the display keys and the dial;
-//! display-key uploads write to the keyboard, the rest is dry run only.
+//! uploads write to the keyboard, the picture resets are dry run only.
 
 mod picture;
 
@@ -72,8 +72,8 @@ enum Command {
         #[command(subcommand)]
         command: RgbCommand,
     },
-    /// Pictures on the display keys and the dial (phase 3). Only `key`
-    /// writes to the keyboard so far; the rest needs --dry-run.
+    /// Pictures on the display keys and the dial (phase 3). The resets
+    /// still need --dry-run.
     Picture {
         #[command(subcommand)]
         command: picture::PictureCommand,

@@ -3,7 +3,8 @@
 //! Every command converts and validates first. With `--dry-run` it runs the
 //! whole transfer against a simulated keyboard (nothing is opened) and
 //! prints the packets. Real runs are allowed only for what the project
-//! owner has approved: display-key uploads (2026-11-06).
+//! owner has approved: display-key (2026-11-06) and dial (2026-11-07)
+//! uploads.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -149,10 +150,10 @@ impl Request {
     }
 
     /// Real picture writes approved by the project owner so far: uploads
-    /// to a display key (2026-11-06, D1 first). The dial upload and the
+    /// to a display key (2026-11-06) and to the dial (2026-11-07). The
     /// picture resets are still dry-run only.
     fn approved_for_hardware(&self) -> bool {
-        matches!(self, Request::Key { .. })
+        matches!(self, Request::Key { .. } | Request::Dial { .. })
     }
 
     fn reset_packet(&self, profile: u8) -> Result<Option<Packet>, everest_proto::PictureError> {
@@ -206,7 +207,7 @@ pub fn run(command: PictureCommand) -> CliResult {
         if !request.approved_for_hardware() {
             eprintln!("error: this picture command may not write to the keyboard yet.");
             eprintln!(
-                "Only `picture key` is approved for hardware. Add --dry-run to convert the \
+                "Only `picture key` and `picture dial` are approved for hardware. Add --dry-run to convert the \
                  image and see the packets."
             );
             return Ok(ExitCode::from(4));
@@ -342,7 +343,7 @@ fn dry_run(request: &Request, common: &PictureCommon) -> CliResult {
          the old picture), and once it is accepted the transfer must run to the end."
     );
     if matches!(target, PictureTarget::Key { .. }) {
-        println!("A display-key picture takes about 20 s on firmware 57.");
+        println!("A display-key picture takes about 15-20 s on firmware 57.");
     } else {
         println!("The dial must show its image menu; the real run checks that first.");
     }
@@ -351,9 +352,10 @@ fn dry_run(request: &Request, common: &PictureCommon) -> CliResult {
 
 fn print_summary(r: &TransferReport) {
     println!(
-        "\n{} chunks sent ({} re-sent), descriptor sent {} time(s), done {}, display refresh {}.",
+        "\n{} chunks sent ({} re-sent, {} extra reads after \"busy\"), descriptor sent {} time(s), done {}, display refresh {}.",
         r.chunks_sent,
         r.chunk_resends,
+        r.busy_rereads,
         r.descriptor_sends,
         if r.confirmed_done {
             "confirmed"

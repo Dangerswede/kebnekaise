@@ -135,6 +135,13 @@ pub struct TransferTiming {
     /// Wait after each chunk before reading its answer.
     #[serde(serialize_with = "millis")]
     pub chunk_wait: Duration,
+    /// On a "busy" answer to a chunk, read the answer again (GET only, no
+    /// send) up to `busy_polls` times, `busy_poll_wait` apart, before
+    /// re-sending the chunk. Firmware 57 answered most chunks "busy" first;
+    /// re-reading finds out whether the chunk was taken after all.
+    #[serde(serialize_with = "millis")]
+    pub busy_poll_wait: Duration,
+    pub busy_polls: u32,
     /// Answers in a row that do not move the byte count before giving up.
     pub max_stalls: u32,
     /// Polls for the final "done" answer, and the pause between them.
@@ -159,6 +166,8 @@ impl Default for TransferTiming {
             descriptor_wait: Duration::from_millis(150),
             descriptor_timeout: Duration::from_secs(90),
             chunk_wait: Duration::from_millis(30),
+            busy_poll_wait: Duration::from_millis(10),
+            busy_polls: 10,
             max_stalls: 600,
             final_polls: 40,
             final_wait: Duration::from_millis(100),
@@ -176,6 +185,7 @@ impl TransferTiming {
             descriptor_wait: Duration::ZERO,
             descriptor_timeout: Duration::from_secs(5),
             chunk_wait: Duration::ZERO,
+            busy_poll_wait: Duration::ZERO,
             final_wait: Duration::ZERO,
             refresh_wait: Duration::ZERO,
             ..Self::default()
@@ -224,6 +234,8 @@ pub struct TransferReport {
     pub checksum: u16,
     pub chunks_sent: usize,
     pub chunk_resends: usize,
+    /// Extra GET_REPORTs after "busy" answers (no data sent).
+    pub busy_rereads: usize,
     pub descriptor_sends: usize,
     /// The final answer carried the "done" mark.
     pub confirmed_done: bool,
@@ -308,6 +320,7 @@ pub fn upload<T: Transport>(
     // Step 4: chunks, following the keyboard's byte count.
     let mut chunks_sent = 0;
     let mut chunk_resends = 0;
+    let mut busy_rereads = 0;
     let mut stalls = 0;
     let mut confirmed_done = false;
     let mut last_offset = None;
@@ -332,6 +345,17 @@ pub fn upload<T: Transport>(
             Err(e) => return Err(e.into()),
         };
         chunks_sent += 1;
+        let mut reply = reply;
+        let mut busy_polls = 0;
+        while reply.is_some_and(|r| r.status == TransferStatus::Busy)
+            && busy_polls < timing.busy_polls
+            && session.transfer().is_some_and(|a| a.received == offset)
+        {
+            std::thread::sleep(timing.busy_poll_wait);
+            reply = session.poll_feature()?;
+            busy_polls += 1;
+            busy_rereads += 1;
+        }
         let now = session.transfer().map_or(total, |a| a.received);
         if let Some(r) = reply {
             confirmed_done |= r.confirms(total, picture.checksum());
@@ -375,6 +399,7 @@ pub fn upload<T: Transport>(
         checksum: picture.checksum(),
         chunks_sent,
         chunk_resends,
+        busy_rereads,
         descriptor_sends,
         confirmed_done,
         refresh_seen,
@@ -397,6 +422,9 @@ pub struct SimulatedKeyboard {
     pub busy_descriptors: usize,
     /// Chunk numbers (0-based count of chunk reports) to answer with `fb`.
     pub busy_chunks: Vec<usize>,
+    /// Chunk numbers that are stored at once but answered `fb` on the first
+    /// read and `fa` on the next one.
+    pub late_acks: Vec<usize>,
     /// Reject the descriptor (`fe`).
     pub reject: bool,
     /// Stop answering after this many chunk reports (simulates a hang).
@@ -405,6 +433,8 @@ pub struct SimulatedKeyboard {
     received: usize,
     chunk_reports: usize,
     reply: Option<[u8; PACKET_SIZE]>,
+    /// Shown after the next read of `reply` (late acknowledgement).
+    next_reply: Option<[u8; PACKET_SIZE]>,
     inbox: std::collections::VecDeque<[u8; PACKET_SIZE]>,
     /// The picture bytes as the keyboard stored them.
     pub stored: Vec<u8>,
@@ -471,6 +501,7 @@ impl Transport for SimulatedKeyboard {
                 return Ok(());
             }
             let busy = self.busy_chunks.contains(&self.chunk_reports);
+            let late = self.late_acks.contains(&self.chunk_reports);
             self.chunk_reports += 1;
             if busy {
                 self.ack(STATUS_BUSY);
@@ -480,6 +511,12 @@ impl Transport for SimulatedKeyboard {
                 self.stored.extend_from_slice(&p[..n]);
                 self.received += n;
                 self.ack(STATUS_OK);
+                if late {
+                    self.next_reply = self.reply.take();
+                    let mut r = [0u8; PACKET_SIZE];
+                    r[..4].copy_from_slice(&[0xAA, 0x55, 0x10, STATUS_BUSY]);
+                    self.reply = Some(r);
+                }
             }
             return Ok(());
         }
@@ -504,7 +541,11 @@ impl Transport for SimulatedKeyboard {
     }
 
     fn get_feature_raw(&mut self) -> everest_hid::Result<Option<[u8; PACKET_SIZE]>> {
-        Ok(self.reply)
+        let r = self.reply;
+        if let Some(next) = self.next_reply.take() {
+            self.reply = Some(next);
+        }
+        Ok(r)
     }
 }
 
@@ -562,6 +603,22 @@ mod tests {
         // After the transfer only the 11 14 read.
         assert_eq!(sim.written.len(), 1);
         assert_eq!(classify(&sim.written[0]).class, SafetyClass::Read);
+    }
+
+    #[test]
+    fn late_ack_is_read_not_resent() {
+        let pic = test_picture(PictureTarget::key(1, 1).unwrap());
+        let sim = SimulatedKeyboard {
+            late_acks: (0..162).collect(),
+            ..Default::default()
+        };
+        let (r, sim) = run(sim, &pic);
+        let r = r.unwrap();
+        assert_eq!(r.chunks_sent, 162);
+        assert_eq!(r.chunk_resends, 0);
+        assert_eq!(r.busy_rereads, 162);
+        assert!(r.confirmed_done);
+        assert_eq!(sim.stored, pic.bytes());
     }
 
     #[test]
