@@ -833,8 +833,12 @@ the screen geometry under "Pixel format". [W]
 and 104 around (120, 120), rulers along the edges, a line on row 203): the
 r = 120 ring follows the screen edge at the top and both sides, the r = 124
 ring is cut off, and the row 203 line is visible across the bottom between
-the arcs. This confirms the 240 px circle centred at (120, 120), with picture
-rows 0 to 203 visible inside it. [W]
+the arcs. The rulers show about 60 to 180 on the sides and along the top,
+which fits a visible radius of about 121 px. So the edge lies between r = 120
+and r = 124, the circle is centred on the picture's centre (no offset), and
+the straight bottom edge is row 203 (we only send 204 rows). The code keeps
+r = 120 for the preview and for `--fit contain`, which is at most one pixel
+too careful. [W]
 
 ### 2026-11-07, first dial upload (same keyboard, Windows 11)
 
