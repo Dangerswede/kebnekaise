@@ -827,6 +827,15 @@ confirmed. Note: at 64 000 bytes an ordinary acknowledgement reads
 the full size ends a transfer, never a lone `fa`. The calibration photo gave
 the screen geometry under "Pixel format". [W]
 
+### 2026-11-07, dial edge test
+
+`picture dial test-dial-edge.png` (rings of radius 124, 120, 116, 112, 108
+and 104 around (120, 120), rulers along the edges, a line on row 203): the
+r = 120 ring follows the screen edge at the top and both sides, the r = 124
+ring is cut off, and the row 203 line is visible across the bottom between
+the arcs. This confirms the 240 px circle centred at (120, 120), with picture
+rows 0 to 203 visible inside it. [W]
+
 ### 2026-11-07, first dial upload (same keyboard, Windows 11)
 
 `kebnekaise picture dial test-dial.png --debug` (240 x 204 test picture,
