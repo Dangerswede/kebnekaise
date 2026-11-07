@@ -813,6 +813,16 @@ test picture (up arrow, red/green/blue corners):
 - No `ff aa` after the `11 14` read.
 - Total 25.7 s, of which about 8 s were the needless waits above.
 
+### 2026-11-07, dial calibration and timing
+
+`picture dial test-dial-grid.png` with the build that re-sends at once:
+132.9 s (first acknowledgement after 3.4 s, then about 84 ms per chunk, 3 162
+sends for 1 530 chunks). Final answer `aa 55 10 fa 80 7e 01 56 3c fa`
+confirmed. Note: at 64 000 bytes an ordinary acknowledgement reads
+`aa 55 10 fa 00 fa 00 ...` (count `0x00fa00`); only the byte count reaching
+the full size ends a transfer, never a lone `fa`. The calibration photo gave
+the screen geometry under "Pixel format". [W]
+
 ### 2026-11-07, first dial upload (same keyboard, Windows 11)
 
 `kebnekaise picture dial test-dial.png --debug` (240 x 204 test picture,

@@ -180,7 +180,9 @@ impl<T: Transport> Session<T> {
             if r.accepted(0x10) && r.received > armed.received {
                 armed.received = r.received.min(armed.total);
             }
-            if armed.received >= armed.total || (r.accepted(0x10) && r.complete) {
+            // Only the byte count ends a transfer: a stray `fe`/`fa` in other
+            // bytes of a mid-stream answer must never end it early.
+            if armed.received >= armed.total {
                 self.transfer = None;
             }
         }
