@@ -308,7 +308,11 @@ pub struct TransferReply {
     pub status: TransferStatus,
     /// Bytes 4..6, little-endian: bytes received so far (chunk replies).
     pub received: usize,
-    /// Byte 9 is `fe`: the picture is complete.
+    /// Bytes 7..8, little-endian. In the final answer firmware 57 echoes
+    /// the picture checksum here.
+    pub checksum: u16,
+    /// Byte 9 is `fe`: complete, as described by everest-mac. Firmware 57
+    /// answered `fa` here instead (see [`TransferReply::confirms`]).
     pub complete: bool,
 }
 
@@ -324,8 +328,19 @@ impl TransferReply {
             received: usize::from(reply[4])
                 | (usize::from(reply[5]) << 8)
                 | (usize::from(reply[6]) << 16),
+            checksum: u16::from_le_bytes([reply[7], reply[8]]),
             complete: reply[9] == DONE_MARK,
         })
+    }
+
+    /// The final answer for a picture of `total` bytes with `checksum`:
+    /// accepted, every byte received, and either the `fe` mark or the
+    /// checksum echoed back (`aa 55 10 fa <size> <checksum> fa`, seen on
+    /// firmware 57).
+    pub fn confirms(&self, total: usize, checksum: u16) -> bool {
+        self.accepted(0x10)
+            && self.received == total
+            && (self.complete || self.checksum == checksum)
     }
 
     /// The keyboard accepted `command` (`fa`).
@@ -450,6 +465,18 @@ mod tests {
         assert!(p.accepted(0x10));
         assert_eq!(p.received, 10_368);
         assert!(p.complete);
+        assert!(p.confirms(10_368, 0));
+        // Firmware 57: no fe mark, but the checksum is echoed.
+        let fw57 = [0xAA, 0x55, 0x10, 0xFA, 0x80, 0x28, 0x00, 0x6A, 0x60, 0xFA];
+        let p = TransferReply::parse(&fw57).unwrap();
+        assert!(!p.complete);
+        assert_eq!(p.checksum, 0x606A);
+        assert!(p.confirms(10_368, 0x606A));
+        assert!(!p.confirms(10_368, 0x606B));
+        assert!(!p.confirms(10_304, 0x606A));
+        // An ordinary chunk answer confirms nothing.
+        let mid = [0xAA, 0x55, 0x10, 0xFA, 0x40, 0x01, 0, 0, 0, 0];
+        assert!(!TransferReply::parse(&mid).unwrap().confirms(10_368, 0));
         r[3] = 0xFB;
         assert_eq!(
             TransferReply::parse(&r).unwrap().status,

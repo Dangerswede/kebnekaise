@@ -162,7 +162,7 @@ impl Default for TransferTiming {
             max_stalls: 600,
             final_polls: 40,
             final_wait: Duration::from_millis(100),
-            refresh_wait: Duration::from_secs(4),
+            refresh_wait: Duration::from_secs(1),
         }
     }
 }
@@ -334,7 +334,7 @@ pub fn upload<T: Transport>(
         chunks_sent += 1;
         let now = session.transfer().map_or(total, |a| a.received);
         if let Some(r) = reply {
-            confirmed_done |= r.accepted(0x10) && r.complete;
+            confirmed_done |= r.confirms(total, picture.checksum());
         }
         if now > offset {
             stalls = 0;
@@ -357,7 +357,7 @@ pub fn upload<T: Transport>(
     while !confirmed_done && polls < timing.final_polls {
         std::thread::sleep(timing.final_wait);
         if let Some(r) = session.poll_feature()? {
-            confirmed_done = r.accepted(0x10) && r.complete;
+            confirmed_done = r.confirms(total, picture.checksum());
         }
         polls += 1;
     }
@@ -431,7 +431,11 @@ impl SimulatedKeyboard {
             (n >> 16) as u8,
         ]);
         if done {
-            r[9] = 0xFE;
+            // As firmware 57 answers: size, checksum echo, then fa.
+            let [c0, c1] = everest_proto::pictures::checksum(&self.stored).to_le_bytes();
+            r[7] = c0;
+            r[8] = c1;
+            r[9] = STATUS_OK;
         }
         self.reply = Some(r);
     }
