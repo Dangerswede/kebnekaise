@@ -346,16 +346,16 @@ fn dry_run(request: &Request, common: &PictureCommon) -> CliResult {
         println!("A display-key picture takes about 15-20 s on firmware 57.");
     } else {
         println!("The dial must show its image menu; the real run checks that first.");
+        println!("The dial screen is round: the corners of the 240 x 204 picture are not visible.");
     }
     Ok(ExitCode::SUCCESS)
 }
 
 fn print_summary(r: &TransferReport) {
     println!(
-        "\n{} chunks sent ({} re-sent, {} extra reads after \"busy\"), descriptor sent {} time(s), done {}, display refresh {}.",
+        "\n{} chunks sent ({} re-sent), descriptor sent {} time(s), done {}, display refresh {}.",
         r.chunks_sent,
         r.chunk_resends,
-        r.busy_rereads,
         r.descriptor_sends,
         if r.confirmed_done {
             "confirmed"

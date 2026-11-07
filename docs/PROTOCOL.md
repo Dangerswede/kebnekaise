@@ -493,8 +493,8 @@ This section is the specification `everest-proto` implements for phase 3
 (`crates/everest-proto/src/pictures.rs`), and `everest-core` drives
 (`crates/everest-core/src/pictures.rs`). Status on 2026-11-07: display-key
 uploads approved (2026-11-06) and seen working on D1 [W]; the dial upload
-approved 2026-11-07, waiting for its first test; the picture resets are dry
-run only.
+approved and seen working on 2026-11-07 [W]; the picture resets are dry run
+only.
 
 Source: everest-mac (MIT), which recovered the sequence from Base Camp 1.9.10
 (`SDKDLL.dll`, `StartPicUpdate`) and verified it on a UK-ISO board with
@@ -505,9 +505,12 @@ firmware 57. Tags are relative to that, as in the lighting section.
 - RGB565, 2 bytes per pixel, **little-endian**: the 16-bit value is
   `R5 << 11 | G6 << 5 | B5`, low byte first. So pure red is `00 f8`, pure
   green `e0 07`, pure blue `1f 00`. [C]
-- Row-major, **top row first**, left to right. [W] on a display key
-  (2026-11-07: an arrow test picture came out upright, not mirrored, with
-  the right colours). The dial is still to check.
+- Row-major, **top row first**, left to right. [W] on a display key and on
+  the dial (2026-11-07: arrow test pictures came out upright, not mirrored,
+  with the right colours).
+- **The dial screen is round.** Only a circle of the 240 x 204 picture is
+  visible: the corners are cut off (in the test, the 30 x 30 corner squares
+  were hidden or half visible). Keep important content in the middle. [W]
 - No alpha. We composite transparent pixels onto black before converting. [P]
 - Display key: 72 x 72 = 10 368 bytes = 162 chunks exactly.
   Dial: 240 x 204 = 97 920 bytes = 1 530 chunks exactly. [C]
@@ -550,7 +553,7 @@ Then, as a process that holds the vendor interface alone:
 | 1 | feature `aa 55 21 <04 keys / 03 dial>` | 80 ms, then GET | `aa 55 21 fa` | else wait 120 ms and resend, up to 40 times, then stop (nothing started) |
 | 2 | feature `aa 55 22 00` | 80 ms, then GET | `aa 55 22 fa` | as step 1 |
 | 3 | feature descriptor (below) | 150 ms, then GET | `aa 55 10 fa` | `fb`: wait 150 ms and **resend the descriptor**; `fe`: stop; give up after 90 s |
-| 4 | feature chunk `n` (64 image bytes) | 30 ms, then GET | `aa 55 10 fa <received: 3 LE>` | continue from `received`; `fb`: GET again every 10 ms, up to 10 times (no send); if the count still has not moved, or no answer: resend the same chunk |
+| 4 | feature chunk `n` (64 image bytes) | 30 ms, then GET | `aa 55 10 fa <received: 3 LE>` | continue from `received`; `fb` or no answer: resend the same chunk |
 | 5 | | 100 ms polls, up to 4 s, only if step 4 did not already end with it | `aa 55 10 fa <size> <checksum> fa` (fw 57) or `... fe` at byte 9 | the final answer: size and checksum confirmed |
 | 6 | display keys only: `11 14` (read) | read up to 1 s | `ff aa` | "display refreshed"; not required (not seen on fw 57) |
 
@@ -595,10 +598,12 @@ matches ours. [W]
 move, and re-sending the same chunk is correct. On firmware 57 almost every
 chunk was answered `fb` the first time and `fa` on the re-send (it seems to
 need more than 30 ms per chunk), and the picture arrived intact. [W]
-From the log alone we cannot tell whether the first send was dropped or
-taken and acknowledged late. Since 2026-11-07 the tool first re-reads the
-answer (GET only) after a `fb` and re-sends only if the count still has not
-moved; the next log will show which case it is.
+It is not a matter of time: in the dial test we re-read the answer every
+10 ms for 100 ms after each `fb`, and it never turned into `fa`; only the
+re-send was taken. So the first send of a chunk is dropped and the re-send
+is the one that counts. Why the keyboard rejects the first send is unknown
+(a Base Camp capture would show whether Base Camp sees the same). The tool
+re-sends at once, as everest-mac does. [W]
 
 Pictures are stored per profile: the descriptor's profile byte decides which
 of the five profiles' D1..D4 set is written. A real run uses the active
@@ -643,8 +648,9 @@ A session opened with the `Pictures` policy may send `READ` packets and the
 2. ~~Row order and orientation on the D keys~~ (top row first, not
    mirrored). The dial is still open.
 3. ~~Time per key picture.~~ About 17 s of transfer on firmware 57.
-4. Does the dial upload need the dial in image mode (everest-mac switches it
-   first), and does the new picture show at once?
+4. ~~Does the new dial picture show at once?~~ Yes, with the dial already in
+   image mode (2026-11-07). Whether an upload works in another dial mode is
+   not tested (the tool refuses).
 5. ~~Is `ff aa` seen after a key upload?~~ No (2026-11-07).
 6. Do the resets answer on the interrupt channel?
 7. Does a picture survive a replug? (Expected: yes, it is in flash.)
@@ -801,6 +807,19 @@ test picture (up arrow, red/green/blue corners):
   printed "done NOT confirmed" and polled for 4 s more; fixed since.
 - No `ff aa` after the `11 14` read.
 - Total 25.7 s, of which about 8 s were the needless waits above.
+
+### 2026-11-07, first dial upload (same keyboard, Windows 11)
+
+`kebnekaise picture dial test-dial.png --debug` (240 x 204 test picture,
+dial in image mode), tool version with "re-read 10 times on `fb`":
+
+- The picture showed at once, upright. The screen is round: of the corner
+  squares, the blue one (bottom left) was half visible, the others and most
+  of the text in the bottom right were outside the circle.
+- Descriptor sent 3 times. 1 530 chunks needed, 3 115 sent (1 585 re-sent);
+  15 850 extra reads after `fb` never changed an answer. Final answer
+  confirmed with the checksum echo. 384 s in total, about 150 s of it in the
+  useless re-reads; those are removed again.
 
 ## Sources and licences
 
