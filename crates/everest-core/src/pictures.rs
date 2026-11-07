@@ -79,9 +79,51 @@ pub fn convert_image(
     target: PictureTarget,
     fit: Fit,
 ) -> Result<Picture, PictureError> {
-    let rgb = fit_image(img, target.width(), target.height(), fit);
+    let rgb = match target {
+        PictureTarget::Dial => fit_dial(img, fit),
+        PictureTarget::Key { .. } => fit_image(img, target.width(), target.height(), fit),
+    };
     Picture::from_rgb8(target, rgb.as_raw())
 }
+
+/// Fits an image to the round dial screen (see [`DIAL_SCREEN_DIAMETER`]):
+/// the image is laid out on the whole 240 x 240 circle, centred on the
+/// screen's centre (120, 120), and the top 204 rows are what is sent.
+///
+/// - `cover` and `stretch` fill the whole 240 x 240 square, so every pixel
+///   that can be seen is used; a square (or round) 240 x 240 picture maps
+///   onto the screen 1:1, losing only the dark strip at the bottom.
+/// - `contain` keeps the whole image visible: it is scaled so that it fits
+///   inside the circle and above row 204.
+pub fn fit_dial(img: &DynamicImage, fit: Fit) -> RgbImage {
+    const FILTER: FilterType = FilterType::Lanczos3;
+    let d = DIAL_SCREEN_DIAMETER;
+    let (w, h) = (DIAL_WIDTH_PX, DIAL_HEIGHT_PX);
+    let square = match fit {
+        Fit::Cover | Fit::Stretch => fit_image(img, d, d, fit),
+        Fit::Contain => {
+            let (iw, ih) = img.dimensions();
+            let (iw, ih) = (f64::from(iw.max(1)), f64::from(ih.max(1)));
+            let r = f64::from(d) / 2.0;
+            // Inside the circle: half-diagonal <= r. Above row 204: the
+            // lower half-height <= 204 - 120.
+            let lower = f64::from(h) - r;
+            let scale = (2.0 * r / iw.hypot(ih)).min(2.0 * lower / ih);
+            let sw = ((iw * scale).floor() as u32).clamp(1, d);
+            let sh = ((ih * scale).floor() as u32).clamp(1, d);
+            let scaled = flatten(&img.resize_exact(sw, sh, FILTER).to_rgba8());
+            let mut canvas = RgbImage::new(d, d);
+            let x = (d - sw) / 2;
+            let y = (d - sh) / 2;
+            image::imageops::overlay(&mut canvas, &scaled, i64::from(x), i64::from(y));
+            canvas
+        }
+    };
+    image::imageops::crop_imm(&square, 0, 0, w, h).to_image()
+}
+
+const DIAL_WIDTH_PX: u32 = everest_proto::pictures::DIAL_WIDTH;
+const DIAL_HEIGHT_PX: u32 = everest_proto::pictures::DIAL_HEIGHT;
 
 /// Reads an image file (PNG, JPEG, GIF: first frame, BMP) and converts it
 /// for `target`. Returns the picture and the source size.
@@ -686,6 +728,41 @@ mod tests {
         let stretch = fit_image(&img, 8, 8, Fit::Stretch);
         assert!(red(stretch.get_pixel(0, 0).0));
         assert!(blue(stretch.get_pixel(7, 7).0));
+    }
+
+    #[test]
+    fn dial_fit_uses_the_round_screen() {
+        // A 240 x 240 source with a marker at its centre (120, 120) lands
+        // on the screen centre, 1:1.
+        let mut src = RgbImage::from_pixel(240, 240, image::Rgb([0, 0, 255]));
+        for y in 118..122 {
+            for x in 118..122 {
+                src.put_pixel(x, y, image::Rgb([255, 255, 255]));
+            }
+        }
+        let src = DynamicImage::ImageRgb8(src);
+        let cover = fit_dial(&src, Fit::Cover);
+        assert_eq!(cover.dimensions(), (240, 204));
+        assert!(cover.get_pixel(120, 120).0[0] > 200);
+        assert!(cover.get_pixel(120, 102).0[0] < 60);
+
+        // Contain: everything inside the circle and above row 204.
+        let wide = DynamicImage::ImageRgb8(RgbImage::from_pixel(400, 100, image::Rgb([0, 255, 0])));
+        let c = fit_dial(&wide, Fit::Contain);
+        for (x, y, p) in c.enumerate_pixels() {
+            if p.0[1] > 128 {
+                assert!(dial_pixel_visible(x, y), "({x}, {y}) is off the screen");
+            }
+        }
+        assert!(c.get_pixel(120, 120).0[1] > 200);
+        let tall = DynamicImage::ImageRgb8(RgbImage::from_pixel(100, 400, image::Rgb([0, 255, 0])));
+        let c = fit_dial(&tall, Fit::Contain);
+        assert!(c.get_pixel(120, 203).0[1] > 128 || c.get_pixel(120, 200).0[1] > 128);
+        for (x, y, p) in c.enumerate_pixels() {
+            if p.0[1] > 128 {
+                assert!(dial_pixel_visible(x, y), "({x}, {y}) is off the screen");
+            }
+        }
     }
 
     #[test]

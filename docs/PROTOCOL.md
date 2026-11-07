@@ -516,6 +516,10 @@ firmware 57. Tags are relative to that, as in the lighting section.
   calibration grid on 2026-11-07: the circle centred at (120, 120) with
   radius 120 followed the screen edge; one centred at (120, 102) did not.
   `--preview` draws the dial as the round screen. [W]
+- The converter lays dial images out on the whole 240 x 240 circle, centred
+  on (120, 120), and sends the top 204 rows: `cover` (default) and
+  `stretch` fill every visible pixel, a 240 x 240 round picture maps 1:1;
+  `contain` scales the image to fit inside the circle and above row 204.
 - No alpha. We composite transparent pixels onto black before converting. [P]
 - Display key: 72 x 72 = 10 368 bytes = 162 chunks exactly.
   Dial: 240 x 204 = 97 920 bytes = 1 530 chunks exactly. [C]
