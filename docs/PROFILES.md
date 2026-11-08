@@ -6,9 +6,10 @@ pictures back to us (see "Keys and display-key actions (phase 4)" in
 and that file is the source of truth. The format is the same on Linux and
 Windows: TOML, UTF-8, paths relative to the file.
 
-Status (phase 4, step 1): `kebnekaise profile template|check|show` work;
-`profile apply` is a dry run only, and display-key actions and macros need
-`kebnekaise agent`, which is not built yet.
+Status (phase 4): `kebnekaise profile template|check|show|apply` work.
+`profile apply` writes `[lighting]` and `[remap]` to the keyboard;
+display-key markers are not sent yet, and display-key actions and macros
+need `kebnekaise agent`, which is not built yet.
 
 ## Commands
 
@@ -17,6 +18,7 @@ kebnekaise profile template --out work.toml   # commented example
 kebnekaise profile check work.toml            # lists every problem
 kebnekaise profile show work.toml
 kebnekaise profile apply work.toml --dry-run  # the packets, nothing sent
+kebnekaise profile apply work.toml            # lighting + remaps for real
 ```
 
 ## Format 1

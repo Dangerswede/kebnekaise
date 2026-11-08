@@ -1,9 +1,9 @@
 //! `kebnekaise key ...` and `kebnekaise profile ...` (phase 4).
 //!
-//! Only one remap is approved for hardware so far: the first test, `grave`
-//! (Nordic §) acting as `1`, and its restore (approved by the project owner
-//! on 2026-11-08). Every other command that would send a packet requires
-//! `--dry-run` and exits with code 4 without it.
+//! Remaps (`14 20`) between keys in the position table are approved for
+//! hardware (first test 2026-11-08, all table keys the same day). Display-key
+//! actions (`12 08` + `17 AA`) are not: `key arm` requires `--dry-run`, and a
+//! real `profile apply` sends lighting and remaps but skips the markers.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,20 +12,18 @@ use std::time::Duration;
 use clap::Subcommand;
 use everest_core::hex;
 use everest_core::lighting::trimmed;
-use everest_core::profile::{PlanStep, Profile};
+use everest_core::profile::{Checked, PlanStep, Profile};
 use everest_proto::keymap::{all_keys, nordic_legend, Shape};
 use everest_proto::{ActionText, DKey, KeyPos, Packet, StoredKind};
 
-use everest_core::Keyboard;
+use everest_core::lighting::LightingPlan;
+use everest_core::{DeviceReport, Keyboard};
 use everest_hid::coexist::find_conflicts;
 use everest_hid::discovery::{list_mountain_interfaces, select_command_channel};
 use everest_hid::session::QueryOptions;
 use everest_hid::{HidTransport, TracingTransport};
 
 use crate::{hid_api, print_conflicts, CliResult};
-
-/// Remaps approved for hardware: (key, acts as) by name.
-const APPROVED_REMAPS: &[(&str, &str)] = &[("grave", "1"), ("grave", "grave")];
 
 /// Options for a real run.
 #[derive(clap::Args)]
@@ -48,7 +46,7 @@ pub struct HwArgs {
 pub enum KeyCommand {
     /// List the key positions remaps accept, with their code.
     Names,
-    /// Make one key act as another (`14 20`). Dry run only for now.
+    /// Make one key act as another (`14 20`). Stored in the keyboard's flash.
     Remap {
         /// Key to change (position name, Nordic legend or 0xNN).
         key: String,
@@ -60,8 +58,9 @@ pub enum KeyCommand {
         #[command(flatten)]
         hw: HwArgs,
     },
-    /// Undo a remap by mapping the key to itself. Dry run only for now.
+    /// Undo a remap by mapping the key to itself.
     Restore {
+        /// Key to restore, or `all` for every key in `key names`.
         key: String,
         #[arg(long)]
         dry_run: bool,
@@ -90,21 +89,24 @@ pub enum ProfileCommand {
     Check { file: PathBuf },
     /// Show what a profile file contains.
     Show { file: PathBuf },
-    /// Write a profile to the keyboard. Dry run only for now.
+    /// Write a profile's lighting and remaps to the keyboard. Display-key
+    /// markers are not sent yet.
     Apply {
         file: PathBuf,
         /// Print the packets instead of sending them.
         #[arg(long)]
         dry_run: bool,
-        /// Print JSON instead of text.
+        /// Print JSON instead of text (dry run only).
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        hw: HwArgs,
     },
 }
 
 fn not_approved(what: &str) -> CliResult {
     eprintln!("error: {what} may not write to the keyboard yet.");
-    eprintln!("It is waiting for the first hardware test. Add --dry-run to see the packets.");
+    eprintln!("It is waiting for its first hardware test. Add --dry-run to see the packets.");
     Ok(ExitCode::from(4))
 }
 
@@ -149,7 +151,9 @@ pub fn run_key(command: KeyCommand) -> CliResult {
                     nordic_legend(k).unwrap_or("")
                 );
             }
-            println!("\nCodes from everest-mac; none is verified on hardware yet.");
+            println!(
+                "\nCodes from everest-mac and Base Camp's database; grave (§) is verified on hardware."
+            );
             Ok(ExitCode::SUCCESS)
         }
         KeyCommand::Remap {
@@ -160,20 +164,26 @@ pub fn run_key(command: KeyCommand) -> CliResult {
         } => {
             let (k, t): (KeyPos, KeyPos) = (key.parse()?, to.parse()?);
             if !dry_run {
-                return send_remap(k, t, &hw);
+                return send_remaps(&[(k, t)], &hw);
             }
             print_steps(&[one(Packet::remap(k, t), format!("remap: {k} acts as {t}"))]);
             Ok(ExitCode::SUCCESS)
         }
         KeyCommand::Restore { key, dry_run, hw } => {
-            let k: KeyPos = key.parse()?;
+            let keys: Vec<KeyPos> = if key.trim().eq_ignore_ascii_case("all") {
+                all_keys().map(|(k, _)| k).collect()
+            } else {
+                vec![key.parse()?]
+            };
+            let pairs: Vec<(KeyPos, KeyPos)> = keys.iter().map(|k| (*k, *k)).collect();
             if !dry_run {
-                return send_remap(k, k, &hw);
+                return send_remaps(&pairs, &hw);
             }
-            print_steps(&[one(
-                Packet::remap(k, k),
-                format!("remap: {k} back to itself"),
-            )]);
+            let steps: Vec<_> = pairs
+                .iter()
+                .map(|(k, _)| one(Packet::remap(*k, *k), format!("remap: {k} back to itself")))
+                .collect();
+            print_steps(&steps);
             Ok(ExitCode::SUCCESS)
         }
         KeyCommand::Arm { key, dry_run } => {
@@ -193,23 +203,14 @@ pub fn run_key(command: KeyCommand) -> CliResult {
     }
 }
 
-fn approved(key: KeyPos, to: KeyPos) -> bool {
-    APPROVED_REMAPS
-        .iter()
-        .any(|(a, b)| key.name() == *a && to.name() == *b)
-}
+type Hw = TracingTransport<HidTransport>;
 
-/// Sends one approved remap to the real keyboard.
-fn send_remap(key: KeyPos, to: KeyPos, hw: &HwArgs) -> CliResult {
-    if !approved(key, to) {
-        eprintln!("error: this remap may not write to the keyboard yet.");
-        eprintln!(
-            "Only the first test is approved: `key remap grave 1` (Nordic § types 1) and \
-             `key restore grave`. Add --dry-run to see the packet."
-        );
-        return Ok(ExitCode::from(4));
-    }
-    let packet = Packet::remap(key, to);
+/// Finds the keyboard, checks for other programs, reads the report and the
+/// firmware gate. `Err(code)` means stop with that exit code (the reason is
+/// already printed); nothing has been written then.
+fn connect(
+    hw: &HwArgs,
+) -> Result<Result<(Hw, DeviceReport), ExitCode>, Box<dyn std::error::Error>> {
     let api = hid_api()?;
     let interfaces = list_mountain_interfaces(&api);
     let channel = match select_command_channel(&interfaces, hw.device.as_deref()) {
@@ -217,20 +218,17 @@ fn send_remap(key: KeyPos, to: KeyPos, hw: &HwArgs) -> CliResult {
         Err(e) => {
             eprintln!("error: {e}");
             eprintln!("Run `kebnekaise list` to see what is connected.");
-            return Ok(ExitCode::from(2));
+            return Ok(Err(ExitCode::from(2)));
         }
     };
     let conflicts = find_conflicts(Some(&channel.path));
     if !conflicts.is_empty() {
         print_conflicts(&conflicts);
         eprintln!("Close them and try again.");
-        return Ok(ExitCode::from(3));
+        return Ok(Err(ExitCode::from(3)));
     }
     let transport = TracingTransport::new(HidTransport::open(&api, &channel.path)?, hw.debug);
-    let mut keyboard = Keyboard::for_keymap(transport).with_query_options(QueryOptions {
-        timeout: Duration::from_millis(hw.timeout_ms),
-        attempts: 3,
-    });
+    let mut keyboard = Keyboard::new(transport).with_query_options(query_options(hw));
     let report = match keyboard.read_report(hw.force) {
         Ok(r) => r,
         Err(e) => {
@@ -238,7 +236,7 @@ fn send_remap(key: KeyPos, to: KeyPos, hw: &HwArgs) -> CliResult {
             eprintln!(
                 "Nothing was written. If Base Camp ran recently, unplug and replug the keyboard."
             );
-            return Ok(ExitCode::from(1));
+            return Ok(Err(ExitCode::from(1)));
         }
     };
     if !report.write_gate.writes_allowed() {
@@ -246,35 +244,171 @@ fn send_remap(key: KeyPos, to: KeyPos, hw: &HwArgs) -> CliResult {
             "error: firmware {} is untested; nothing was written. --force overrides.",
             report.firmware.version
         );
-        return Ok(ExitCode::from(5));
+        return Ok(Err(ExitCode::from(5)));
     }
-    let profile = report
-        .firmware
-        .active_profile
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| "?".into());
-    let seen = keyboard.remap_key(&packet, report.write_gate, Duration::from_millis(500))?;
-    println!(
-        "Firmware {}, profile {profile}: sent {}",
-        report.firmware.version,
-        hex(trimmed(packet.as_bytes()))
-    );
-    // Key events (01 ...) can carry keystrokes: count them, never print them.
-    let events = seen.iter().filter(|p| p[0] == 0x01).count();
-    for p in seen.iter().filter(|p| p[0] != 0x01) {
-        println!("  received {}", hex(trimmed(p)));
+    Ok(Ok((keyboard.into_transport(), report)))
+}
+
+fn query_options(hw: &HwArgs) -> QueryOptions {
+    QueryOptions {
+        timeout: Duration::from_millis(hw.timeout_ms),
+        attempts: 3,
+    }
+}
+
+/// How long to listen for the echo of one remap.
+const REMAP_LISTEN: Duration = Duration::from_millis(300);
+
+/// Sends remaps one by one and checks each echo. Returns how many were not
+/// echoed. Key events (`01 ...`) can carry keystrokes: they are counted,
+/// never printed.
+fn remap_all(
+    keyboard: &mut Keyboard<Hw>,
+    report: &DeviceReport,
+    pairs: &[(KeyPos, KeyPos)],
+) -> Result<usize, everest_core::Error> {
+    let mut missing = 0;
+    let mut events = 0;
+    for (key, to) in pairs {
+        let packet = Packet::remap(*key, *to);
+        let seen = keyboard.remap_key(&packet, report.write_gate, REMAP_LISTEN)?;
+        events += seen.iter().filter(|p| p[0] == 0x01).count();
+        let sent = trimmed(packet.as_bytes());
+        let echoed = seen.iter().any(|p| trimmed(p) == sent);
+        let what = if key == to {
+            format!("{key} back to itself")
+        } else {
+            format!("{key} acts as {to}")
+        };
+        if echoed {
+            println!("  ok    {:<28} {}", what, hex(sent));
+        } else {
+            missing += 1;
+            println!("  NO ECHO {:<26} {}", what, hex(sent));
+            for p in seen.iter().filter(|p| p[0] != 0x01) {
+                println!("          received {}", hex(trimmed(p)));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(
+            everest_core::profile::KEY_PACKET_PAUSE_MS,
+        ));
     }
     if events > 0 {
         println!("  ({events} key event report(s) not shown)");
     }
-    if seen.is_empty() {
-        println!("  no answer within 500 ms");
+    Ok(missing)
+}
+
+fn active_profile(report: &DeviceReport) -> String {
+    report
+        .firmware
+        .active_profile
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "?".into())
+}
+
+/// Sends remaps to the real keyboard. Every pair names keys in the position
+/// table (parsing guarantees it, and the allowlist checks it again).
+fn send_remaps(pairs: &[(KeyPos, KeyPos)], hw: &HwArgs) -> CliResult {
+    let (transport, report) = match connect(hw)? {
+        Ok(c) => c,
+        Err(code) => return Ok(code),
+    };
+    let mut keyboard = Keyboard::for_keymap(transport).with_query_options(query_options(hw));
+    println!(
+        "Firmware {}, profile {}: sending {} remap(s).",
+        report.firmware.version,
+        active_profile(&report),
+        pairs.len()
+    );
+    let missing = remap_all(&mut keyboard, &report, pairs)?;
+    if missing > 0 {
+        eprintln!("warning: {missing} remap(s) were not echoed; check those keys.");
+        return Ok(ExitCode::from(1));
     }
-    if key == to {
-        println!("Now press {key}: it should type its own character again.");
-    } else {
-        println!("Now press {key}: it should act as {to}.");
+    match pairs {
+        [(key, to)] if key == to => {
+            println!("Now press {key}: it should type its own character again.")
+        }
+        [(key, to)] => println!("Now press {key}: it should act as {to}."),
+        _ => println!("Done. The keyboard keeps these after a replug."),
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `profile apply` for real: lighting (which also makes `hardware_profile`
+/// active and saves the slot), then remaps. Display-key markers are skipped.
+fn apply_profile(p: &Profile, checked: &Checked, hw: &HwArgs) -> CliResult {
+    let (transport, report) = match connect(hw)? {
+        Ok(c) => c,
+        Err(code) => return Ok(code),
+    };
+    println!(
+        "Firmware {}, profile {} active.",
+        report.firmware.version,
+        active_profile(&report)
+    );
+    let transport = match &checked.lighting {
+        Some(settings) => {
+            let plan = LightingPlan::effect(p.hardware_profile, settings, true)?;
+            let mut keyboard =
+                Keyboard::for_lighting(transport).with_query_options(query_options(hw));
+            let outcome = keyboard.apply_lighting(&plan, report.write_gate)?;
+            println!(
+                "Lighting: sent {} packets; now profile {}, lighting slot {}{}.",
+                outcome.packets_sent,
+                outcome
+                    .firmware_after
+                    .active_profile
+                    .map_or("?".into(), |n| n.to_string()),
+                outcome.firmware_after.lighting_slot,
+                if outcome.verified {
+                    " (verified, saved)"
+                } else {
+                    ""
+                }
+            );
+            if !outcome.verified {
+                eprintln!(
+                    "error: keyboard profile {} did not become active; remaps were not sent.",
+                    p.hardware_profile
+                );
+                return Ok(ExitCode::from(1));
+            }
+            keyboard.into_transport()
+        }
+        None => {
+            if report.firmware.active_profile != Some(p.hardware_profile)
+                && !checked.remaps.is_empty()
+            {
+                eprintln!(
+                    "error: the profile is for keyboard profile {}, but profile {} is active, and \
+                     without [lighting] this tool does not switch profiles. Nothing was written.",
+                    p.hardware_profile,
+                    active_profile(&report)
+                );
+                return Ok(ExitCode::from(1));
+            }
+            transport
+        }
+    };
+    let mut missing = 0;
+    if !checked.remaps.is_empty() {
+        println!("Remaps:");
+        let mut keyboard = Keyboard::for_keymap(transport).with_query_options(query_options(hw));
+        missing = remap_all(&mut keyboard, &report, &checked.remaps)?;
+    }
+    if !checked.dkeys.is_empty() {
+        println!("Display keys: not sent (display-key actions are not approved for hardware yet).");
+    }
+    if p.pictures.is_some() {
+        println!("Pictures are uploaded separately with `kebnekaise picture`.");
+    }
+    if missing > 0 {
+        eprintln!("warning: {missing} remap(s) were not echoed; check those keys.");
+        return Ok(ExitCode::from(1));
+    }
+    println!("Done.");
     Ok(ExitCode::SUCCESS)
 }
 
@@ -339,10 +473,14 @@ pub fn run_profile(command: ProfileCommand) -> CliResult {
             file,
             dry_run,
             json,
+            hw,
         } => {
             let (p, checked) = Profile::load(&file)?;
             if !dry_run {
-                return not_approved("`profile apply`");
+                if json {
+                    return Err("--json is only for --dry-run".into());
+                }
+                return apply_profile(&p, &checked, &hw);
             }
             let steps = p.plan(&checked)?;
             if json {

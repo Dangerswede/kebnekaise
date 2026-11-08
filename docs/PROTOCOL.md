@@ -668,9 +668,10 @@ A session opened with the `Pictures` policy may send `READ` packets and the
 
 This section is the specification for phase 4 (`everest-proto`:
 `keymap.rs`, `actions.rs`; `everest-core`: `profile.rs`). Status on
-2026-11-08: one remap (§ acting as 1) and its restore are approved for the
-first hardware test; everything else is a dry run only (`kebnekaise key
-...`, `kebnekaise profile apply --dry-run`) and exits with code 4 for real.
+2026-11-08: remaps between any two keys in the position table are approved
+for hardware (`key remap`, `key restore`, `key restore all`, and the
+lighting and remaps of `profile apply`). Display-key actions (`key arm`, the
+markers of `profile apply`) are a dry run only and exit with code 4 for real.
 
 ### What we know and what we do not
 
@@ -838,7 +839,7 @@ to check and rarely used: `grave` (Nordic §, top left) acting as `1`.
 2. Replug: is the remap still there (flash) or gone (RAM only)?
 3. `kebnekaise key restore §`: `14 20 01 00 01`. Does § type § again?
 
-The tool sends only these two packets for real (`key remap` and
+For this test the tool sent only these two packets for real (`key remap` and
 `key restore` refuse every other pair with exit code 4), through a session
 whose policy allows reads and `keymap` packets only. It prints any non-event
 packet the keyboard sends in the 500 ms after the write; key-event reports
@@ -848,6 +849,29 @@ Risk: if the restore does not work, § keeps typing `1`. Other ways back are
 Base Camp's own key page (whose library calls failed on the test machine)
 or its reset, which this project never sends (`13 40` is denied). A § that
 types 1 is easy to live with meanwhile.
+
+Result: everything worked (see Hardware observations, 2026-11-08).
+
+### All table remaps (approved 2026-11-08)
+
+After the first test the project owner approved remaps between any two keys
+in the position table (`kebnekaise key names`). It is the same packet with
+other codes, and the identity remap is proven to restore a key. The tool:
+
+- accepts only keys in the table (the parser and the allowlist both check);
+- sends one packet at a time, listens 300 ms for the echo, prints `ok` or
+  `NO ECHO` per key, and exits with code 1 if any echo is missing;
+- pauses 150 ms between remaps;
+- `key restore all` maps every key in the table to itself (about 45 s).
+  With no read-back, it is the way to get a known state;
+- `profile apply` sends `[lighting]` first (it switches to and saves
+  `hardware_profile`, and must be verified by `11 00` before any remap is
+  sent), then the remaps. Without `[lighting]` it refuses to write unless
+  `hardware_profile` is already active, since it does not switch profiles
+  on its own. Display-key markers are skipped with a note.
+
+Unknown [U]: whether a remap belongs to the active hardware profile or to
+all profiles. The first test ran on profile 1 only.
 
 ## Commands: DENY (never sent by this project)
 
