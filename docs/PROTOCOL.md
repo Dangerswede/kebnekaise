@@ -675,7 +675,9 @@ below is implemented as a dry run only (`kebnekaise key ...`,
 ### What we know and what we do not
 
 - **Remap** has a single source: everest-mac (MIT), which took it from
-  Base Camp and has not reported it working on hardware. [P]
+  Base Camp's library and has not reported it working on hardware. Base
+  Camp's own UI never sends it (see below), so it may do nothing on this
+  firmware. [P]
 - **No read-back** of remaps or display-key actions is known in any source.
   We never probe for one (unknown commands are denied). The profile file
   on the computer is therefore the source of truth; see `docs/PROFILES.md`.
@@ -686,8 +688,17 @@ below is implemented as a dry run only (`kebnekaise key ...`,
   Base Camp captures (start-up, two picture attempts) contain no remap,
   action or macro packets, only `11 00`, `11 02`, `11 14`, `11 80`, `11 84`.
   Decision (2026-11-08, project owner): macros run on the computer, in
-  `kebnekaise agent`. A capture of Base Camp's key and macro pages may still
-  show an on-device format later.
+  `kebnekaise agent`.
+- **Base Camp keeps key functions on the computer.** A capture on
+  2026-11-08 (Base Camp 1.9.10, firmware 57, Windows) covered: remapping
+  Caps Lock, a macro on F9, a function on D1, and undoing all three. On the
+  vendor interface Base Camp sent only `11 00`, `11 14`, `11 02` and, after
+  a reconnect, the clock set (`11 80`, `11 84`). There were no `14 20`,
+  `12 08`, `17 AA` or feature reports, and nothing else on any interface
+  besides the normal Caps Lock LED output report. Base Camp's key page also
+  offers no key-to-key remap for this keyboard, only commands (for example
+  starting Task Manager). So Base Camp runs macros and key functions in its
+  own service, and `14 20` is a command Base Camp's UI does not use. [W]
 - **Display keys run nothing themselves.** The keyboard stores a short text
   per key and, once a key has one, reports presses as `01` events (byte 42).
   A program on the computer must run the action (Base Camp's service did,
