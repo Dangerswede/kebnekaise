@@ -159,6 +159,28 @@ impl Packet {
         p
     }
 
+    /// `14 20 <key> 00 <new key>`: make the key at position `key` act as
+    /// the key at position `to`, in the active profile (phase 4, [P]).
+    /// `remap(k, k)` is believed to undo a remap.
+    pub fn remap(key: crate::KeyPos, to: crate::KeyPos) -> Self {
+        Self::from_prefix(&[0x14, 0x20, key.code(), 0x00, to.code()])
+    }
+
+    /// `12 08 00 <1..4>`: select the action slot of a display key. Must be
+    /// followed by [`Packet::action_text`].
+    pub fn action_slot(key: crate::DKey) -> Self {
+        Self::from_prefix(&[0x12, 0x08, 0x00, key.number()])
+    }
+
+    /// `17 AA <len> 00 <kind> <text>`: the text for the selected action
+    /// slot; `len` = 1 + text length.
+    pub fn action_text(kind: crate::StoredKind, text: &crate::ActionText) -> Self {
+        let t = text.as_str().as_bytes();
+        let mut p = Self::from_prefix(&[0x17, 0xAA, (t.len() + 1) as u8, 0x00, kind.byte()]);
+        p.0[5..5 + t.len()].copy_from_slice(t);
+        p
+    }
+
     /// The command family and command, bytes 0..2. Replies echo them.
     pub fn command(&self) -> [u8; 2] {
         [self.0[0], self.0[1]]
