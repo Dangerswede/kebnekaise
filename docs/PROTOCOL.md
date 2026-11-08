@@ -708,6 +708,48 @@ first hardware test; everything else is a dry run only (`kebnekaise key
   A program on the computer must run the action (Base Camp's service did,
   BaseCamp-Linux and everest-mac do the same). [C]
 
+### Base Camp's library and database (2026-11-08)
+
+Two files from the project owner's Base Camp 1.9.10 install were examined
+on 2026-11-08: `SDKDLL.dll` ("Everest SDK" 1.0.0.1, 32-bit), the library
+that builds the packets, by disassembling its exported functions; and
+`BaseCamp.db`, Base Camp's SQLite database. Only facts (byte values, field
+order) are taken; no code or text. Tag [D] below = read from the library's
+machine code, not yet seen on the wire or on hardware.
+
+| Export | Packet(s) it sends | Conf. |
+|---|---|---|
+| `ChangeKey(key, value)` | `14 20 <key> 00 <value lo> <value hi>` | [D] |
+| `ChangeShortcutKey(key, a, b)` | `14 21 <key> 00 <a> <b>` | [D] |
+| `SetFullMacroData(m, a, b, count, entries)` | `14 18 <a> 00 <b>`, then per 15 entries `15 <m> <n> <more> <n x 4 bytes>` (`<more>` 0 on the first packet, 1 after); count capped at 1000 | [D] |
+| `SetLaunchContent(key, data, len)` | `17 <key> <n> <seq> <n bytes>`, 60 bytes per packet; `<seq>` 0 = only packet, 1 first, 2 middle, 3 last | [D] |
+| `GetMacroContent(a, b, c)` | `11 02 00 01 <a> <b> <c>`, answered by a multi-packet reply or by `ff aa ff 00` (= empty) | [D] |
+| `ResetKeys()` | `13 60`, waits up to 3 s | [D] |
+
+Notes:
+
+- Every function first checks that the library holds an open device and
+  otherwise returns failure without sending anything. That is the path
+  every UI call took on the test machine (see above).
+- `11 02 00 01 01 <id> 02` is what Base Camp sent hundreds of times in the
+  captures, always answered `ff aa`. The library calls it
+  `GetMacroContent`, i.e. a **read** of what is stored for an entry, not the
+  "built-in icon select" listed under PERSIST (that reading came from
+  everest-mac). Until it is checked on hardware it stays classified as a
+  write and is never sent.
+- `SetLaunchContent` puts the key code in byte 1. The display keys D1..D4
+  have codes `AA`..`AD` (below), so `17 AA` is D1's launch content. How
+  everest-mac's `12 08 00 <n>` slot select fits in is [U]: the library has
+  no `12 08` (it has `12 0A`).
+- `ResetKeys` (`13 60`) would be a narrower way back than any factory reset
+  if a remap gets stuck. It is not allowed or used; it would need the
+  project owner's yes first.
+
+`BaseCamp.db` table `EverestKeyBidings` lists, for each key, Base Camp's
+library key code (`DLLKeyId`), the Windows virtual-key code and the LED
+index. It confirms the position codes below and adds the ones everest-mac
+did not have.
+
 ### Remap: `14 20`
 
 | Byte | Content |
@@ -729,21 +771,30 @@ The allowlist accepts only these codes, all [P] (from everest-mac):
 
 | Row | name = code |
 |---|---|
+| F row | esc 6E, f1..f12 = 70..7B, prtsc 7C, scrlk 7D, pause 7E |
 | Numbers | grave (Nordic §) 01, 1..0 = 02..0B, minus (+) 0C, equal (´) 0D, backspace 0F |
 | Top | tab 10, q..p = 11..1A, lbracket (Å) 1B, rbracket (¨) 1C, backslash 1D (ANSI) |
 | Home | caps 1E, a..l = 1F..27, semicolon (Ö) 28, quote (Ä) 29, iso-hash (') 2A (ISO), enter 2B |
 | Bottom | lshift 2C, iso-extra (<) 2D (ISO), z..m = 2E..34, comma 35, period 36, slash (-) 37, rshift 39 |
 | Space | lctrl 3A, lwin 3B, lalt 3C, space 3D, ralt 3E, rwin 3F, rctrl 40 |
 | Navigation | insert 4B, delete 4C, left 4F, home 50, end 51, up 53, down 54, pgup 55, pgdn 56, right 59 |
-| Numpad | numlock 5A |
+| Numpad | numlock 5A, kp7 5B, kp4 5C, kp1 5D, kp-slash 5F, kp8 60, kp5 61, kp2 62, kp0 63, kp-star 64, kp9 65, kp6 66, kp3 67, kp-dot 68, kp-minus 69, kp-plus 6A, kp-enter 6C |
 
-Left out on purpose: Esc, the function row, Fn and the numpad keys other
-than Num Lock. If the IBM numbering holds they would be Esc `6E`, F1..F12
-`70..7B` and numpad `5B..6C`, but everest-mac lists numpad 1 as `52`, which
-does not fit that numbering, so the numpad is [U] and none of these is sent.
+Sources: everest-mac for the main block; Base Camp's database for the F
+row, the numpad and confirmation of the rest (it has no rows for the two
+ISO-only keys `2A`/`2D`, which stay [P] from everest-mac). everest-mac's
+`52` for numpad 1 is wrong; Base Camp says `5D`. Also in the database but
+**not** accepted for remaps: fn `9A`, D1..D4 `AA..AD`, media next `B4`,
+previous `B5`, play/pause `B7`, mute `B8`, dial right/left `BB`/`BC`, and
+F13..F24 `E6..F1` (sharing LEDs with F1..F12, probably the Fn layer).
 
-`14 21` (remap with a modifier byte) is **denied**: everest-mac passes a
-value 0..15 without saying what the bits mean.
+`ChangeKey` sends a 16-bit value in bytes 4..5. For a key-to-key remap the
+value is believed to be the target's position code, with byte 5 zero; what
+other values mean (functions, macros, launch content) is [U]. The allowlist
+only accepts byte 5 = 0 and a target from the table.
+
+`14 21` (`ChangeShortcutKey`, two value bytes) is **denied** until we know
+what the two bytes mean.
 
 ### Display-key actions: `12 08` + `17 AA`
 

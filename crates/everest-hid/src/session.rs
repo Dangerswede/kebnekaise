@@ -446,7 +446,7 @@ mod tests {
             pad(&[0x14, 0x00, 0x00, 0x00, 0x01, 0x00]), // lighting
             pad(&[0x13, 0x55, 0x00, 0x00, 0x00]),       // save slot
             pad(&[0x13, 0x40, 0x00, 0x00, 0x01]),       // flash reset
-            pad(&[0x14, 0x20, 0x6E, 0x00, 0x02]),       // undocumented position
+            pad(&[0x14, 0x20, 0xAA, 0x00, 0x02]),       // display key D1
         ] {
             let c = everest_proto::classify(&p);
             assert!(!Policy::Keymap.allows(&c), "{}", c.name);

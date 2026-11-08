@@ -6,10 +6,11 @@
 //! Caps Lock `0x1E`, Left Shift `0x2C`, and on ISO boards the extra key
 //! beside Left Shift is `0x2D`.
 //!
-//! The table holds only codes reported by the MIT-licensed everest-mac
-//! project. None of them has been seen working on hardware by anyone yet,
-//! so every entry is [P] in `docs/PROTOCOL.md`. Codes outside the table
-//! (function row, Esc, numpad Enter and slash, ...) are not accepted.
+//! The codes come from the MIT-licensed everest-mac project and from Base
+//! Camp's own key table (`BaseCamp.db`, column `DLLKeyId`), which agree.
+//! None has been seen working on hardware yet, so every entry is [P] in
+//! `docs/PROTOCOL.md`. Fn, the display keys, media keys, the dial and the
+//! F13..F24 layer have codes too but are not accepted here.
 //!
 //! Names are physical positions on a US board, as in [`crate::ledmap`]:
 //! on a Nordic board `semicolon` is Ö, `quote` is Ä, `lbracket` is Å.
@@ -175,6 +176,38 @@ const KEYS: &[(&str, u8, Shape)] = &[
     ("pgdn", 0x56, Shape::Both),
     ("right", 0x59, Shape::Both),
     ("numlock", 0x5A, Shape::Both),
+    ("kp7", 0x5B, Shape::Both),
+    ("kp4", 0x5C, Shape::Both),
+    ("kp1", 0x5D, Shape::Both),
+    ("kp-slash", 0x5F, Shape::Both),
+    ("kp8", 0x60, Shape::Both),
+    ("kp5", 0x61, Shape::Both),
+    ("kp2", 0x62, Shape::Both),
+    ("kp0", 0x63, Shape::Both),
+    ("kp-star", 0x64, Shape::Both),
+    ("kp9", 0x65, Shape::Both),
+    ("kp6", 0x66, Shape::Both),
+    ("kp3", 0x67, Shape::Both),
+    ("kp-dot", 0x68, Shape::Both),
+    ("kp-minus", 0x69, Shape::Both),
+    ("kp-plus", 0x6A, Shape::Both),
+    ("kp-enter", 0x6C, Shape::Both),
+    ("esc", 0x6E, Shape::Both),
+    ("f1", 0x70, Shape::Both),
+    ("f2", 0x71, Shape::Both),
+    ("f3", 0x72, Shape::Both),
+    ("f4", 0x73, Shape::Both),
+    ("f5", 0x74, Shape::Both),
+    ("f6", 0x75, Shape::Both),
+    ("f7", 0x76, Shape::Both),
+    ("f8", 0x77, Shape::Both),
+    ("f9", 0x78, Shape::Both),
+    ("f10", 0x79, Shape::Both),
+    ("f11", 0x7A, Shape::Both),
+    ("f12", 0x7B, Shape::Both),
+    ("prtsc", 0x7C, Shape::Both),
+    ("scrlk", 0x7D, Shape::Both),
+    ("pause", 0x7E, Shape::Both),
 ];
 
 /// (alias, canonical name). Lower case.
@@ -196,6 +229,9 @@ const ALIASES: &[(&str, &str)] = &[
     ("ins", "insert"),
     ("pageup", "pgup"),
     ("pagedown", "pgdn"),
+    ("escape", "esc"),
+    ("printscreen", "prtsc"),
+    ("scrolllock", "scrlk"),
     // Nordic keycap legends at the same positions.
     ("§", "grave"),
     ("+", "minus"),
@@ -250,12 +286,16 @@ mod tests {
 
     #[test]
     fn unknown_codes_rejected() {
-        // Not in the table: Esc and the function row.
-        assert_eq!(
-            KeyPos::from_name("0x6e"),
-            Err(KeymapError::UnknownCode(0x6E))
-        );
-        assert!(KeyPos::from_name("esc").is_err());
+        // Not accepted: Fn, D1 and F13.
+        for code in [0x9A, 0xAA, 0xE6] {
+            assert_eq!(
+                KeyPos::from_code(code),
+                None,
+                "0x{code:02x} must not be remappable"
+            );
+        }
+        assert_eq!(KeyPos::from_name("esc").unwrap().code(), 0x6E);
+        assert_eq!(KeyPos::from_name("kp1").unwrap().code(), 0x5D);
         assert!(KeyPos::from_code(0x00).is_none());
         assert!(KeyPos::from_code(0x0E).is_none());
     }

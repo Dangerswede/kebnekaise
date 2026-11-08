@@ -578,7 +578,7 @@ format = 2
 name = "x"
 hardware_profile = 9
 [remap]
-caps = "esc"
+caps = "fn"
 [dkeys.d5]
 action = "url"
 target = "file:///etc/passwd"
