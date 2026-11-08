@@ -141,6 +141,41 @@ impl<T: Transport> Keyboard<T> {
         }
     }
 
+    /// Wraps an open transport for key remaps: reads plus `14 20`, nothing
+    /// else. Nothing is sent yet.
+    pub fn for_keymap(transport: T) -> Self {
+        Keyboard {
+            session: Session::new(transport, Policy::Keymap),
+            options: QueryOptions::default(),
+        }
+    }
+
+    /// Sends one key remap (`14 20`) and returns the packets the keyboard
+    /// sent in the next `listen` (no reply is documented). Refuses unless
+    /// `gate` allows writes and the session was opened with
+    /// [`Keyboard::for_keymap`].
+    pub fn remap_key(
+        &mut self,
+        packet: &Packet,
+        gate: WriteGate,
+        listen: std::time::Duration,
+    ) -> Result<Vec<[u8; PACKET_SIZE]>> {
+        if let WriteGate::Refused { firmware } = gate {
+            return Err(Error::WritesRefused(firmware));
+        }
+        if self.session.policy() != Policy::Keymap {
+            return Err(Error::ReadOnlySession);
+        }
+        if packet.classification().group != everest_proto::Group::Keymap {
+            return Err(Error::Precondition(format!(
+                "{packet:?} is not a key remap"
+            )));
+        }
+        self.session.drain()?;
+        self.session.send(packet)?;
+        Ok(self.session.listen(listen)?)
+    }
+
     fn check_pictures(&self, gate: WriteGate) -> Result<()> {
         if let WriteGate::Refused { firmware } = gate {
             return Err(Error::WritesRefused(firmware));
@@ -526,6 +561,38 @@ mod tests {
     }
 
     /// The simulator answers the transfer; the reads come from `scripted`.
+    #[test]
+    fn remap_needs_gate_and_keymap_policy() {
+        use everest_proto::KeyPos;
+        let grave = KeyPos::from_name("grave").unwrap();
+        let one = KeyPos::from_name("1").unwrap();
+        let packet = Packet::remap(grave, one);
+        let short = std::time::Duration::from_millis(1);
+
+        let old = Keyboard::new(scripted(0x55)).read_report(false).unwrap();
+        let mut kb = Keyboard::for_keymap(MockTransport::default());
+        assert!(matches!(
+            kb.remap_key(&packet, old.write_gate, short),
+            Err(Error::WritesRefused(_))
+        ));
+
+        let ok = Keyboard::new(scripted(0x57)).read_report(false).unwrap();
+        let mut kb = Keyboard::for_lighting(MockTransport::default());
+        assert!(matches!(
+            kb.remap_key(&packet, ok.write_gate, short),
+            Err(Error::ReadOnlySession)
+        ));
+
+        let mut kb = Keyboard::for_keymap(MockTransport::default());
+        assert!(kb
+            .remap_key(&Packet::firmware_info(), ok.write_gate, short)
+            .is_err());
+        kb.remap_key(&packet, ok.write_gate, short).unwrap();
+        let written = kb.into_transport().written().to_vec();
+        assert_eq!(written.len(), 1);
+        assert_eq!(&written[0][..5], &[0x14, 0x20, 0x01, 0x00, 0x02]);
+    }
+
     fn picture_mock() -> pictures::SimulatedKeyboard {
         pictures::SimulatedKeyboard::default()
     }

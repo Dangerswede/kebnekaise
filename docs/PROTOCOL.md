@@ -668,9 +668,9 @@ A session opened with the `Pictures` policy may send `READ` packets and the
 
 This section is the specification for phase 4 (`everest-proto`:
 `keymap.rs`, `actions.rs`; `everest-core`: `profile.rs`). Status on
-2026-11-08: **nothing in it has been sent to hardware**. Every command
-below is implemented as a dry run only (`kebnekaise key ...`,
-`kebnekaise profile apply --dry-run`); a real run exits with code 4.
+2026-11-08: one remap (§ acting as 1) and its restore are approved for the
+first hardware test; everything else is a dry run only (`kebnekaise key
+...`, `kebnekaise profile apply --dry-run`) and exits with code 4 for real.
 
 ### What we know and what we do not
 
@@ -770,20 +770,30 @@ only try to open a URL that goes nowhere.
 | `12 08` | byte 2 `00`, key 1..4, rest zero |
 | `17 AA` | length 2..56, byte 3 `00`, kind `02` or `04`, text printable ASCII of exactly length - 1 bytes, rest zero |
 
-Remaps are in the `keymap` group and actions in the `actions` group. No
-session policy allows either yet.
+Remaps are in the `keymap` group and actions in the `actions` group. The
+`Keymap` session policy allows reads and `keymap` packets, nothing else;
+no policy allows `actions` yet.
 
-### First hardware test (needs the project owner's yes)
+### First hardware test (approved 2026-11-08)
 
-1. `kebnekaise key remap caps lctrl`: one packet `14 20 1e 00 3a`. Check
-   that Caps Lock acts as Ctrl.
-2. Replug: is the remap still there?
-3. `kebnekaise key restore caps`: `14 20 1e 00 1e`. Is Caps Lock back?
+The project owner approved one remap and its restore, on a key that is easy
+to check and rarely used: `grave` (Nordic §, top left) acting as `1`.
 
-Risk: if the restore does not work, the remap stays in flash. Other ways
-back are Base Camp's own key page or its reset, which this project never
-sends (`13 40` is denied). Caps Lock acting as Ctrl is harmless to live
-with meanwhile.
+1. `kebnekaise key remap § 1`: one packet `14 20 01 00 02`. In a text
+   editor, § should now type `1`.
+2. Replug: is the remap still there (flash) or gone (RAM only)?
+3. `kebnekaise key restore §`: `14 20 01 00 01`. Does § type § again?
+
+The tool sends only these two packets for real (`key remap` and
+`key restore` refuse every other pair with exit code 4), through a session
+whose policy allows reads and `keymap` packets only. It prints any non-event
+packet the keyboard sends in the 500 ms after the write; key-event reports
+are counted but never printed, since they can carry keystrokes.
+
+Risk: if the restore does not work, § keeps typing `1`. Other ways back are
+Base Camp's own key page (whose library calls failed on the test machine)
+or its reset, which this project never sends (`13 40` is denied). A § that
+types 1 is easy to live with meanwhile.
 
 ## Commands: DENY (never sent by this project)
 

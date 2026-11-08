@@ -24,6 +24,11 @@ pub enum Policy {
     ///
     /// Only for sessions whose writes were cleared by the firmware gate.
     Pictures,
+    /// Phase 4: queries plus key remaps (`14 20` in its documented form).
+    /// Nothing else.
+    ///
+    /// Only for sessions whose writes were cleared by the firmware gate.
+    Keymap,
 }
 
 impl Policy {
@@ -36,6 +41,7 @@ impl Policy {
             (Policy::Pictures, SafetyClass::Persist | SafetyClass::Transfer) => {
                 c.group == Group::Pictures
             }
+            (Policy::Keymap, SafetyClass::Persist) => c.group == Group::Keymap,
             _ => false,
         }
     }
@@ -424,6 +430,26 @@ mod tests {
         for p in refused {
             let c = everest_proto::classify(&p);
             assert!(!Policy::Lighting.allows(&c), "{}", c.name);
+        }
+    }
+
+    #[test]
+    fn keymap_policy_allows_only_remaps() {
+        let ok = everest_proto::classify(&pad(&[0x14, 0x20, 0x01, 0x00, 0x02]));
+        assert!(Policy::Keymap.allows(&ok));
+        assert!(!Policy::Lighting.allows(&ok));
+        assert!(!Policy::Pictures.allows(&ok));
+        assert!(!Policy::ReadOnly.allows(&ok));
+        for p in [
+            pad(&[0x14, 0x21, 0x01, 0x00, 0x02, 0x01]), // remap with modifiers
+            pad(&[0x12, 0x08, 0x00, 0x01]),             // action slot
+            pad(&[0x14, 0x00, 0x00, 0x00, 0x01, 0x00]), // lighting
+            pad(&[0x13, 0x55, 0x00, 0x00, 0x00]),       // save slot
+            pad(&[0x13, 0x40, 0x00, 0x00, 0x01]),       // flash reset
+            pad(&[0x14, 0x20, 0x6E, 0x00, 0x02]),       // undocumented position
+        ] {
+            let c = everest_proto::classify(&p);
+            assert!(!Policy::Keymap.allows(&c), "{}", c.name);
         }
     }
 }

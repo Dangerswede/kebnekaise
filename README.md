@@ -47,8 +47,9 @@ kebnekaise picture reset-keys --keys "1,2" --dry-run
 kebnekaise picture reset-dial --dry-run
 ```
 
-Keys and profiles (phase 4). Nothing here writes to the keyboard yet; every
-command that would send a packet needs `--dry-run`. Profile files are
+Keys and profiles (phase 4). Only the first remap test writes to the
+keyboard (`key remap § 1` and `key restore §`); every other command that
+would send a packet needs `--dry-run`. Profile files are
 described in [docs/PROFILES.md](docs/PROFILES.md):
 
 ```
