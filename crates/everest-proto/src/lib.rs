@@ -5,19 +5,23 @@
 //! carries a [`SafetyClass`], and [`classify`] tells the transport (and the
 //! capture decoder) what an arbitrary packet is. See `docs/PROTOCOL.md`.
 
+pub mod actions;
 mod classify;
 mod info;
+pub mod keymap;
 mod layout;
 pub mod ledmap;
 pub mod lighting;
 mod packet;
 pub mod pictures;
 
+pub use actions::{ActionError, ActionText, DKey, StoredKind};
 pub use classify::{classify, Classification, Group, SafetyClass};
 pub use info::{
     parse_layout, DialMode, DisplayBrightness, ExtendedInfo, FirmwareInfo, FirmwareVersion,
     LightingSlot, ModuleSet, ParseError,
 };
+pub use keymap::{KeyPos, KeymapError};
 pub use layout::{Layout, LayoutShape};
 pub use lighting::{ColorMode, CustomFrame, Direction, Effect, EffectSettings, LightingError, Rgb};
 pub use packet::{is_reply_to, Packet, PACKET_SIZE};

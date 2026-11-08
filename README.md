@@ -47,6 +47,18 @@ kebnekaise picture reset-keys --keys "1,2" --dry-run
 kebnekaise picture reset-dial --dry-run
 ```
 
+Keys and profiles (phase 4). Nothing here writes to the keyboard yet; every
+command that would send a packet needs `--dry-run`. Profile files are
+described in [docs/PROFILES.md](docs/PROFILES.md):
+
+```
+kebnekaise key names                       # key positions for remaps
+kebnekaise key remap caps lctrl --dry-run  # 14 20 1e 00 3a
+kebnekaise profile template --out work.toml
+kebnekaise profile check work.toml
+kebnekaise profile apply work.toml --dry-run
+```
+
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
 It refuses to run while Base Camp or another keyboard tool seems to be
 running, because two programs talking to the keyboard disturb each other.
@@ -86,6 +98,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 - [docs/CAPTURE.md](docs/CAPTURE.md): how to capture Base Camp's traffic to
   fill the gaps.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): language and architecture.
+- [docs/PROFILES.md](docs/PROFILES.md): the profile file format (phase 4).
 
 ## Roadmap
 
@@ -95,7 +108,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 | 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows verified; Linux to test) |
 | 2 | RGB: static colour, brightness, per-key colours, built-in effects (static and effects verified on Windows; per-key testing) |
 | 3 | Display keys and dial screen: upload your own pictures (spec and dry run done; hardware test next) |
-| 4 | Profiles and key bindings: read, write, export, import |
+| 4 | Profiles and key bindings: key remaps, display-key actions, macros (run on the computer), profile files (format and dry run done; hardware test next) |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |
 
 ## Safety

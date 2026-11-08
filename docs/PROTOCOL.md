@@ -194,8 +194,8 @@ Exact sequences, byte layouts and allowlist rules: [Lighting (phase 2)](#lightin
 | `11 14` write form | Dial mode, dock colour, display brightness, screensaver. Layout below. Persistence assumed, not proven. | [C] |
 | `12 08 00 <key 1..4>` then `17 AA <len> 00 <type> <ascii>` | Store a host action for display key D1..D4 (`len` = 1 + string length, max 55 chars; type `0x02` URL, `0x04` shell). Also arms the D-key event reports. | [C] |
 | `11 00` then `11 02 00 01 01 <iid> 02` | Select a built-in icon for a display key; `iid = 0x40 + key*9 + variant` | [P] |
-| `14 20 <key> 00 <newkey>` | Remap a key in the current profile (matrix codes) | [P], not hardware-verified by any source |
-| `14 21 <key> 00 <newkey> <mods>` | Remap with modifier bitmask | [P], not hardware-verified |
+| `14 20 <key> 00 <newkey>` | Remap a key in the current profile (position codes, see [Keys and display-key actions (phase 4)](#keys-and-display-key-actions-phase-4)) | [P], not hardware-verified by any source |
+| `14 21 <key> 00 <newkey> <mods>` | Remap with a modifier byte whose meaning is unknown. **Denied** until it is understood. | [U] |
 | `13 41 00 00 01` | `ResetMMDockPic`: dial picture back to the factory logo. Phase 3 only, explicit user command. | [C] |
 | `13 42 00 00 <b1> <b2> <b3> <b4> <b5>` | `ResetNumpadPic`: D1..D4 pictures back to factory, one key bitmap per profile (bit n = key Dn+1, `0F` = all four). Restores the factory D-key shortcuts too. Phase 3 only, explicit user command. | [C] |
 
@@ -664,6 +664,112 @@ A session opened with the `Pictures` policy may send `READ` packets and the
 6. Do the resets answer on the interrupt channel?
 7. Does a picture survive a replug? (Expected: yes, it is in flash.)
 
+## Keys and display-key actions (phase 4)
+
+This section is the specification for phase 4 (`everest-proto`:
+`keymap.rs`, `actions.rs`; `everest-core`: `profile.rs`). Status on
+2026-11-08: **nothing in it has been sent to hardware**. Every command
+below is implemented as a dry run only (`kebnekaise key ...`,
+`kebnekaise profile apply --dry-run`); a real run exits with code 4.
+
+### What we know and what we do not
+
+- **Remap** has a single source: everest-mac (MIT), which took it from
+  Base Camp and has not reported it working on hardware. [P]
+- **No read-back** of remaps or display-key actions is known in any source.
+  We never probe for one (unknown commands are denied). The profile file
+  on the computer is therefore the source of truth; see `docs/PROFILES.md`.
+- **Macros inside the keyboard**: no source documents a wire format.
+  Base Camp's `SDKDLL.dll` has a function for it (`SetFullMacroData`, name
+  seen in K2's interop declarations), but K2 calls the DLL and never shows
+  the bytes. BaseCamp-Linux plays macros on the computer. Markus's three
+  Base Camp captures (start-up, two picture attempts) contain no remap,
+  action or macro packets, only `11 00`, `11 02`, `11 14`, `11 80`, `11 84`.
+  Decision (2026-11-08, project owner): macros run on the computer, in
+  `kebnekaise agent`. A capture of Base Camp's key and macro pages may still
+  show an on-device format later.
+- **Display keys run nothing themselves.** The keyboard stores a short text
+  per key and, once a key has one, reports presses as `01` events (byte 42).
+  A program on the computer must run the action (Base Camp's service did,
+  BaseCamp-Linux and everest-mac do the same). [C]
+
+### Remap: `14 20`
+
+| Byte | Content |
+|---|---|
+| 0..1 | `14 20` |
+| 2 | position code of the key to change |
+| 3 | `00` |
+| 4 | position code of the key it should act as |
+| 5.. | zero |
+
+Applies to the **active profile** (everest-mac's reading). Whether it needs
+`13 55` to survive a replug, whether `14 20 k 00 k` restores the factory
+function, and whether it acts at once are all [U] until the first test.
+
+Position codes follow the IBM PC/AT key position numbering (the key left of
+`1` is `01`, Tab `10`, Caps Lock `1E`, Left Shift `2C`, the ISO key beside
+Left Shift `2D`). They are **not** HID usages and **not** LED indices.
+The allowlist accepts only these codes, all [P] (from everest-mac):
+
+| Row | name = code |
+|---|---|
+| Numbers | grave (Nordic §) 01, 1..0 = 02..0B, minus (+) 0C, equal (´) 0D, backspace 0F |
+| Top | tab 10, q..p = 11..1A, lbracket (Å) 1B, rbracket (¨) 1C, backslash 1D (ANSI) |
+| Home | caps 1E, a..l = 1F..27, semicolon (Ö) 28, quote (Ä) 29, iso-hash (') 2A (ISO), enter 2B |
+| Bottom | lshift 2C, iso-extra (<) 2D (ISO), z..m = 2E..34, comma 35, period 36, slash (-) 37, rshift 39 |
+| Space | lctrl 3A, lwin 3B, lalt 3C, space 3D, ralt 3E, rwin 3F, rctrl 40 |
+| Navigation | insert 4B, delete 4C, left 4F, home 50, end 51, up 53, down 54, pgup 55, pgdn 56, right 59 |
+| Numpad | numlock 5A |
+
+Left out on purpose: Esc, the function row, Fn and the numpad keys other
+than Num Lock. If the IBM numbering holds they would be Esc `6E`, F1..F12
+`70..7B` and numpad `5B..6C`, but everest-mac lists numpad 1 as `52`, which
+does not fit that numbering, so the numpad is [U] and none of these is sent.
+
+`14 21` (remap with a modifier byte) is **denied**: everest-mac passes a
+value 0..15 without saying what the bits mean.
+
+### Display-key actions: `12 08` + `17 AA`
+
+| # | Packet | Content |
+|---|---|---|
+| 1 | `12 08 00 <1..4>` | select the action slot of D1..D4, rest zero |
+| 2 | `17 AA <len> 00 <kind> <text>` | `len` = 1 + text length, `kind` `02` URL or `04` shell command, text printable ASCII, 1..55 bytes, rest zero |
+
+[C] for the layout (everest-mac and BaseCamp-Linux agree). Whether the slot
+is per profile is [P]. What the factory D-key functions are, and whether a
+stored action replaces them, is [U].
+
+Our tool always stores the marker `kebnekaise:d<n>` with kind `02` (URL).
+The real action lives in the profile file and is run by the agent, so the
+keyboard never holds a command line; if Base Camp ever ran again it would
+only try to open a URL that goes nowhere.
+
+### Allowlist rules (phase 4)
+
+| Packet | Accepted only when |
+|---|---|
+| `14 20` | byte 3 `00`, bytes 2 and 4 both in the code table, rest zero |
+| `14 21` | never |
+| `12 08` | byte 2 `00`, key 1..4, rest zero |
+| `17 AA` | length 2..56, byte 3 `00`, kind `02` or `04`, text printable ASCII of exactly length - 1 bytes, rest zero |
+
+Remaps are in the `keymap` group and actions in the `actions` group. No
+session policy allows either yet.
+
+### First hardware test (needs the project owner's yes)
+
+1. `kebnekaise key remap caps lctrl`: one packet `14 20 1e 00 3a`. Check
+   that Caps Lock acts as Ctrl.
+2. Replug: is the remap still there?
+3. `kebnekaise key restore caps`: `14 20 1e 00 1e`. Is Caps Lock back?
+
+Risk: if the restore does not work, the remap stays in flash. Other ways
+back are Base Camp's own key page or its reset, which this project never
+sends (`13 40` is denied). Caps Lock acting as Ctrl is harmless to live
+with meanwhile.
+
 ## Commands: DENY (never sent by this project)
 
 | Packet | What it is | Why denied |
@@ -710,8 +816,12 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 6. How to **read back** key remaps, macros and per-key colours from the
    keyboard (lighting has no read-back either, see [Lighting (phase 2)](#lighting-phase-2)). No source documents a read command. If none exists, phase 4
    "read profiles" can only mean reading our own files or Base Camp's DB.
+   Phase 4 uses our own profile files (`docs/PROFILES.md`).
 7. Macro storage format (Base Camp has macros; no protocol documented).
-8. Key remap `14 20`/`14 21`: matrix code table and hardware behaviour.
+   Phase 4 plays macros on the computer instead.
+8. Key remap `14 20`/`14 21`: hardware behaviour, numpad and function-row
+   codes, the `14 21` modifier byte. See
+   [Keys and display-key actions (phase 4)](#keys-and-display-key-actions-phase-4).
 9. Full key-event layout in `01` reports.
 10. Dial "custom" menu entry (bit 7 of the menu mask) and dock button functions.
 11. Everest Core behaviour (no modules).

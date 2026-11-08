@@ -100,6 +100,45 @@ fn classify_lighting(bytes: &[u8]) -> Classification {
     }
 }
 
+/// Key remaps must name two documented positions. See "Keys and
+/// display-key actions (phase 4)" in `docs/PROTOCOL.md`.
+fn classify_remap(bytes: &[u8]) -> Classification {
+    let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+    let zero_from = |from: usize| bytes.iter().skip(from).all(|&b| b == 0);
+    let known = |b: u8| crate::KeyPos::from_code(b).is_some();
+    if at(3) == 0 && known(at(2)) && known(at(4)) && zero_from(5) {
+        g("key remap", SafetyClass::Persist, Group::Keymap)
+    } else {
+        c("key remap (malformed)", SafetyClass::Deny)
+    }
+}
+
+/// Display-key action packets must match their documented form exactly.
+fn classify_action(bytes: &[u8]) -> Classification {
+    let at = |i: usize| bytes.get(i).copied().unwrap_or(0);
+    let zero_from = |from: usize| bytes.iter().skip(from).all(|&b| b == 0);
+    match (at(0), at(1)) {
+        (0x12, 0x08) if at(2) == 0 && (1..=4).contains(&at(3)) && zero_from(4) => {
+            g("action slot select", SafetyClass::Persist, Group::Actions)
+        }
+        (0x17, 0xAA) => {
+            let len = usize::from(at(2));
+            let text_len = len.wrapping_sub(1);
+            let ok = (2..=crate::actions::MAX_ACTION_TEXT + 1).contains(&len)
+                && at(3) == 0
+                && crate::StoredKind::from_byte(at(4)).is_some()
+                && (5..5 + text_len).all(|i| (0x20..=0x7E).contains(&at(i)))
+                && zero_from(5 + text_len);
+            if ok {
+                g("action text", SafetyClass::Persist, Group::Actions)
+            } else {
+                c("action text (malformed)", SafetyClass::Deny)
+            }
+        }
+        _ => c("action slot select (malformed)", SafetyClass::Deny),
+    }
+}
+
 /// Picture resets must match their documented form exactly. See
 /// "Pictures (phase 3)" in `docs/PROTOCOL.md`.
 fn classify_picture_reset(bytes: &[u8]) -> Classification {
@@ -181,15 +220,15 @@ pub fn classify(bytes: &[u8]) -> Classification {
         (0x11, 0x81) => c("dial metric", Volatile),
         (0x11, 0x83) => c("dial volume", Volatile),
         (0x11, 0x84) => c("clock set", Volatile),
-        (0x12, 0x08) => g("action slot select", Persist, Group::Actions),
+        (0x12, 0x08) | (0x17, 0xAA) => classify_action(bytes),
         (0x13, 0x40) => c("flash reset", Deny),
         (0x13, 0x41) | (0x13, 0x42) => classify_picture_reset(bytes),
         (0x13, 0x55) | (0x14, 0x00) | (0x14, 0x2C) | (0x14, 0x2D) | (0x14, 0xA0) => {
             classify_lighting(bytes)
         }
-        (0x14, 0x20) => g("key remap", Persist, Group::Keymap),
-        (0x14, 0x21) => g("key remap with modifiers", Persist, Group::Keymap),
-        (0x17, 0xAA) => g("action payload", Persist, Group::Actions),
+        (0x14, 0x20) => classify_remap(bytes),
+        // Meaning of the modifier byte is not known: never sent.
+        (0x14, 0x21) => c("key remap with modifiers (not understood)", Deny),
         (0xAA, 0x55) => classify_transfer(bytes),
         _ => c("unknown", Deny),
     }
@@ -366,5 +405,80 @@ mod tests {
     fn short_input_does_not_panic() {
         assert_eq!(classify(&[0x11]).class, SafetyClass::Deny);
         assert_eq!(classify(&[0xAA, 0x55]).class, SafetyClass::Deny);
+    }
+
+    #[test]
+    fn remaps_must_name_documented_keys() {
+        let ok = classify(&pad(&[0x14, 0x20, 0x1E, 0x00, 0x3A]));
+        assert_eq!((ok.class, ok.group), (SafetyClass::Persist, Group::Keymap));
+        // Unknown position, non-zero byte 3, trailing bytes, modifiers form.
+        for bad in [
+            pad(&[0x14, 0x20, 0x6E, 0x00, 0x3A]),
+            pad(&[0x14, 0x20, 0x1E, 0x00, 0x00]),
+            pad(&[0x14, 0x20, 0x1E, 0x01, 0x3A]),
+            pad(&[0x14, 0x20, 0x1E, 0x00, 0x3A, 0x01]),
+            pad(&[0x14, 0x21, 0x1E, 0x00, 0x3A, 0x01]),
+        ] {
+            assert_eq!(classify(&bad).class, SafetyClass::Deny, "{bad:02x?}");
+        }
+    }
+
+    #[test]
+    fn actions_must_be_exact() {
+        let slot = classify(&pad(&[0x12, 0x08, 0x00, 0x04]));
+        assert_eq!(
+            (slot.class, slot.group),
+            (SafetyClass::Persist, Group::Actions)
+        );
+        assert_eq!(
+            classify(&pad(&[0x12, 0x08, 0x00, 0x05])).class,
+            SafetyClass::Deny
+        );
+        assert_eq!(
+            classify(&pad(&[0x12, 0x08, 0x00, 0x00])).class,
+            SafetyClass::Deny
+        );
+
+        let text = classify(&pad(&[0x17, 0xAA, 0x03, 0x00, 0x02, b'h', b'i']));
+        assert_eq!(
+            (text.class, text.group),
+            (SafetyClass::Persist, Group::Actions)
+        );
+        for bad in [
+            pad(&[0x17, 0xAA, 0x03, 0x00, 0x03, b'h', b'i']), // unknown kind
+            pad(&[0x17, 0xAA, 0x02, 0x00, 0x02, b'h', b'i']), // length mismatch
+            pad(&[0x17, 0xAA, 0x03, 0x00, 0x02, b'h', 0x0A]), // not printable
+            pad(&[0x17, 0xAA, 0x01, 0x00, 0x02]),             // empty
+            pad(&[0x17, 0xAA, 0x40, 0x00, 0x02]),             // too long
+        ] {
+            assert_eq!(classify(&bad).class, SafetyClass::Deny, "{bad:02x?}");
+        }
+    }
+
+    #[test]
+    fn built_packets_pass_their_own_classifier() {
+        use crate::{ActionText, DKey, KeyPos, Packet, StoredKind};
+        let caps = KeyPos::from_name("caps").unwrap();
+        let ctrl = KeyPos::from_name("lctrl").unwrap();
+        assert_eq!(
+            Packet::remap(caps, ctrl).classification().group,
+            Group::Keymap
+        );
+        assert_eq!(
+            Packet::remap(caps, caps).classification().group,
+            Group::Keymap
+        );
+        for k in DKey::ALL {
+            assert_eq!(
+                Packet::action_slot(k).classification().group,
+                Group::Actions
+            );
+            let t = Packet::action_text(StoredKind::Url, &ActionText::marker(k));
+            assert_eq!(t.classification().group, Group::Actions);
+            assert_eq!(&t.as_bytes()[..5], &[0x17, 0xAA, 14, 0x00, 0x02]);
+        }
+        let long = ActionText::new(&"x".repeat(55)).unwrap();
+        let t = Packet::action_text(StoredKind::Shell, &long);
+        assert_eq!(t.classification().class, SafetyClass::Persist);
     }
 }

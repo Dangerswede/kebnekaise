@@ -7,6 +7,7 @@
 
 pub mod lighting;
 pub mod pictures;
+pub mod profile;
 
 use everest_hid::session::QueryOptions;
 use everest_hid::{Policy, Session, Transport};
