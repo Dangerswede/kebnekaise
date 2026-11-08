@@ -9,6 +9,7 @@ driver installation, no firmware flashing.
 
 > **Status: early.** Phase 1 (read-only CLI) works on Windows. Phase 2
 > (lighting): static colour, built-in effects and per-key colours.
+> Phase 3 (pictures): display-key uploads work on Windows; dial upload in its first test.
 > This project is not affiliated with Mountain or Listan.
 
 ## Usage
@@ -35,6 +36,16 @@ kebnekaise rgb key-names    # names accepted by --key
 
 Add `--dry-run` to any `rgb` command to print its packets instead (opens no
 device, sends nothing). In PowerShell, quote colour lists.
+
+Pictures (phase 3). Images are converted to the keyboard's format (72 x 72
+for D1..D4, 240 x 204 for the dial). The resets still need `--dry-run`:
+
+```
+kebnekaise picture key 1 logo.png --preview key1.png   # writes D1 (~20 s)
+kebnekaise picture dial wallpaper.jpg --fit contain     # dial must show its image menu
+kebnekaise picture reset-keys --keys "1,2" --dry-run
+kebnekaise picture reset-dial --dry-run
+```
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
 It refuses to run while Base Camp or another keyboard tool seems to be
@@ -83,7 +94,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 | 0 | Research and plan (done) |
 | 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows verified; Linux to test) |
 | 2 | RGB: static colour, brightness, per-key colours, built-in effects (static and effects verified on Windows; per-key testing) |
-| 3 | Display keys and dial screen: upload your own pictures |
+| 3 | Display keys and dial screen: upload your own pictures (spec and dry run done; hardware test next) |
 | 4 | Profiles and key bindings: read, write, export, import |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |
 
@@ -91,7 +102,9 @@ Camp first (including the tray icon and the `BaseCampService` service).
 
 - Commands are only sent when we know what they do, and every writing command
   is documented in `docs/PROTOCOL.md` before it is implemented.
-- Firmware update, bootloader and factory-reset commands are never implemented.
+- Firmware update, bootloader, device reset and flash reset commands are never
+  implemented. The only resets are the picture resets for the dial and the
+  display keys (phase 3), which only bring back the factory pictures.
 - The firmware version is checked on connect; writes are refused on untested
   versions unless you pass `--force`.
 

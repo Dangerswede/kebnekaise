@@ -3,6 +3,10 @@
 //! `list` enumerates HID interfaces without opening anything, `info` sends
 //! only the documented read commands. `rgb` (phase 2) sets the lighting;
 //! with `--dry-run` it only prints the packets and opens no device.
+//! `picture` (phase 3) converts images for the display keys and the dial;
+//! uploads write to the keyboard, the picture resets are dry run only.
+
+mod picture;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -67,6 +71,12 @@ enum Command {
     Rgb {
         #[command(subcommand)]
         command: RgbCommand,
+    },
+    /// Pictures on the display keys and the dial (phase 3). The resets
+    /// still need --dry-run.
+    Picture {
+        #[command(subcommand)]
+        command: picture::PictureCommand,
     },
 }
 
@@ -224,6 +234,7 @@ fn main() -> ExitCode {
             device.as_deref(),
         ),
         Command::Rgb { command } => rgb(command),
+        Command::Picture { command } => picture::run(command),
     };
     match result {
         Ok(code) => code,
@@ -234,9 +245,9 @@ fn main() -> ExitCode {
     }
 }
 
-type CliResult = Result<ExitCode, Box<dyn std::error::Error>>;
+pub(crate) type CliResult = Result<ExitCode, Box<dyn std::error::Error>>;
 
-fn hid_api() -> Result<HidApi, Box<dyn std::error::Error>> {
+pub(crate) fn hid_api() -> Result<HidApi, Box<dyn std::error::Error>> {
     HidApi::new().map_err(|e| format!("cannot initialise HID: {e}").into())
 }
 
@@ -361,7 +372,7 @@ fn info(opts: InfoOptions, device: Option<&str>) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
-fn print_conflicts(conflicts: &[Conflict]) {
+pub(crate) fn print_conflicts(conflicts: &[Conflict]) {
     eprintln!("Other programs may be using the keyboard:");
     for c in conflicts {
         let why = match c.reason {

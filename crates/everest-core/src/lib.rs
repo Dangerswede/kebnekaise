@@ -6,6 +6,7 @@
 //! a [`lighting::LightingPlan`] only when the firmware gate allows writes.
 
 pub mod lighting;
+pub mod pictures;
 
 use everest_hid::session::QueryOptions;
 use everest_hid::{Policy, Session, Transport};
@@ -27,6 +28,10 @@ pub enum Error {
     ReadOnlySession,
     #[error("the keyboard reported no valid active profile")]
     NoActiveProfile,
+    #[error("{0}")]
+    Precondition(String),
+    #[error(transparent)]
+    Transfer(#[from] pictures::TransferError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -126,6 +131,70 @@ impl<T: Transport> Keyboard<T> {
         }
     }
 
+    /// Wraps an open transport for pictures: reads plus the picture
+    /// transfer and picture resets, nothing else. Nothing is sent yet.
+    pub fn for_pictures(transport: T) -> Self {
+        Keyboard {
+            session: Session::new(transport, Policy::Pictures),
+            options: QueryOptions::default(),
+        }
+    }
+
+    fn check_pictures(&self, gate: WriteGate) -> Result<()> {
+        if let WriteGate::Refused { firmware } = gate {
+            return Err(Error::WritesRefused(firmware));
+        }
+        if self.session.policy() != Policy::Pictures {
+            return Err(Error::ReadOnlySession);
+        }
+        Ok(())
+    }
+
+    /// Uploads a picture (phase 3), after checking everything that can be
+    /// checked before the first packet: the firmware gate, the session
+    /// policy, and that the target's module is attached (and, for the dial,
+    /// that it shows the image menu). `report` must come from
+    /// [`Keyboard::read_report`] on this session.
+    pub fn upload_picture(
+        &mut self,
+        picture: &everest_proto::Picture,
+        report: &DeviceReport,
+        timing: &pictures::TransferTiming,
+        progress: pictures::Progress<'_>,
+    ) -> Result<pictures::TransferReport> {
+        self.check_pictures(report.write_gate)?;
+        check_picture_target(picture.target(), &report.extended)?;
+        self.session.drain()?;
+        Ok(pictures::upload(
+            &mut self.session,
+            picture,
+            timing,
+            progress,
+        )?)
+    }
+
+    /// Sends a picture reset (`13 41` or `13 42`) and returns the packets
+    /// the keyboard sent in the next `listen` (no reply is documented).
+    pub fn reset_pictures(
+        &mut self,
+        packet: &Packet,
+        gate: WriteGate,
+        listen: std::time::Duration,
+    ) -> Result<Vec<[u8; PACKET_SIZE]>> {
+        self.check_pictures(gate)?;
+        let c = packet.classification();
+        if c.group != everest_proto::Group::Pictures
+            || c.class != everest_proto::SafetyClass::Persist
+        {
+            return Err(Error::Precondition(format!(
+                "{packet:?} is not a picture reset"
+            )));
+        }
+        self.session.drain()?;
+        self.session.send(packet)?;
+        Ok(self.session.listen(listen)?)
+    }
+
     /// Sends a lighting plan, pausing after each packet as the plan says,
     /// then reads `11 00` back (for up to about 3 s) to check that the
     /// expected profile and lighting slot are active.
@@ -217,6 +286,33 @@ impl<T: Transport> Keyboard<T> {
 
     pub fn into_transport(self) -> T {
         self.session.into_transport()
+    }
+}
+
+/// Checks that a picture target can be written given what `11 14` says:
+/// the module is attached and, for the dial, the image menu is shown (we do
+/// not switch the dial mode in phase 3).
+pub fn check_picture_target(
+    target: everest_proto::PictureTarget,
+    extended: &ExtendedInfo,
+) -> Result<()> {
+    use everest_proto::{DialMode, PictureTarget};
+    match target {
+        PictureTarget::Key { .. } if !extended.modules.numpad => Err(Error::Precondition(
+            "the numpad (with the display keys) is not attached; nothing was sent".into(),
+        )),
+        PictureTarget::Dial if !extended.modules.media_dock => Err(Error::Precondition(
+            "the media dock (with the dial) is not attached; nothing was sent".into(),
+        )),
+        PictureTarget::Dial if extended.dial_mode != DialMode::Image => {
+            Err(Error::Precondition(format!(
+                "the dial shows {} instead of the image menu. Switch the dial to the image \
+                 menu on the keyboard first (this tool does not change the dial mode yet); \
+                 nothing was sent",
+                extended.dial_mode
+            )))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -426,5 +522,79 @@ mod tests {
             kb.read_report(false),
             Err(Error::Hid(everest_hid::Error::NoReply(_)))
         ));
+    }
+
+    /// The simulator answers the transfer; the reads come from `scripted`.
+    fn picture_mock() -> pictures::SimulatedKeyboard {
+        pictures::SimulatedKeyboard::default()
+    }
+
+    #[test]
+    fn picture_preconditions() {
+        use everest_proto::PictureTarget;
+        let report = Keyboard::new(scripted(0x57)).read_report(false).unwrap();
+        // scripted(): numpad + dock attached, dial mode 0x11 (clock).
+        assert!(check_picture_target(PictureTarget::key(1, 1).unwrap(), &report.extended).is_ok());
+        let e = check_picture_target(PictureTarget::Dial, &report.extended).unwrap_err();
+        assert!(e.to_string().contains("clock"), "{e}");
+
+        let mut ext = report.extended.clone();
+        ext.dial_mode = everest_proto::DialMode::Image;
+        assert!(check_picture_target(PictureTarget::Dial, &ext).is_ok());
+        ext.modules.media_dock = false;
+        assert!(check_picture_target(PictureTarget::Dial, &ext).is_err());
+        ext.modules.numpad = false;
+        assert!(check_picture_target(PictureTarget::key(1, 1).unwrap(), &ext).is_err());
+    }
+
+    #[test]
+    fn picture_upload_refused_without_gate_or_policy() {
+        use everest_proto::{Picture, PictureTarget};
+        let report = Keyboard::new(scripted(0x55)).read_report(false).unwrap();
+        let pic = Picture::from_rgb565(
+            PictureTarget::key(1, 1).unwrap(),
+            vec![0; everest_proto::pictures::KEY_BYTES],
+        )
+        .unwrap();
+        let timing = pictures::TransferTiming::instant();
+        let mut kb = Keyboard::for_pictures(picture_mock());
+        assert!(matches!(
+            kb.upload_picture(&pic, &report, &timing, &mut |_, _| {}),
+            Err(Error::WritesRefused(_))
+        ));
+        assert!(kb.into_transport().features.is_empty());
+
+        let ok = Keyboard::new(scripted(0x57)).read_report(false).unwrap();
+        let mut kb = Keyboard::for_lighting(picture_mock());
+        assert!(matches!(
+            kb.upload_picture(&pic, &ok, &timing, &mut |_, _| {}),
+            Err(Error::ReadOnlySession)
+        ));
+
+        let mut kb = Keyboard::for_pictures(picture_mock());
+        let r = kb
+            .upload_picture(&pic, &ok, &timing, &mut |_, _| {})
+            .unwrap();
+        assert!(r.confirmed_done);
+    }
+
+    #[test]
+    fn picture_reset_sends_only_the_reset() {
+        let report = Keyboard::new(scripted(0x57)).read_report(false).unwrap();
+        let mut kb = Keyboard::for_pictures(picture_mock());
+        let mask = everest_proto::KeyResetMask::for_profile(1, &[1, 2, 3, 4]).unwrap();
+        kb.reset_pictures(
+            &Packet::reset_key_pictures(&mask),
+            report.write_gate,
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        // Lighting is not a picture reset.
+        assert!(kb
+            .reset_pictures(&Packet::save_slot(0), report.write_gate, Duration::ZERO)
+            .is_err());
+        let sim = kb.into_transport();
+        assert_eq!(sim.written.len(), 1);
+        assert_eq!(sim.written[0][..5], [0x13, 0x42, 0x00, 0x00, 0x0F]);
     }
 }
