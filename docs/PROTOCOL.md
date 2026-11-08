@@ -760,9 +760,12 @@ did not have.
 | 4 | position code of the key it should act as |
 | 5.. | zero |
 
-Applies to the **active profile** (everest-mac's reading). Whether it needs
-`13 55` to survive a replug, whether `14 20 k 00 k` restores the factory
-function, and whether it acts at once are all [U] until the first test.
+Applies to the **active profile** (everest-mac's reading; profile 1 was
+active in our test). Seen on hardware 2026-11-08 [W]: the keyboard echoes
+the packet, the remap acts at once, it **survives a replug without `13 55`**
+(it is written to flash by itself), Shift on the remapped key gives the
+target's shifted character (§ remapped to 1 gave `!` with Shift), and
+`14 20 k 00 k` restores the key, also across a replug.
 
 Position codes follow the IBM PC/AT key position numbering (the key left of
 `1` is `01`, Tab `10`, Caps Lock `1E`, Left Shift `2C`, the ISO key beside
@@ -904,6 +907,15 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 12. Pixel row order and orientation of the dial image (see [Pictures (phase 3)](#pictures-phase-3)).
 
 ## Hardware observations
+
+### 2026-11-08, first key remap (same keyboard, Windows 11, firmware 57)
+
+- `key remap § 1` sent `14 20 01 00 02`; the keyboard echoed
+  `14 20 01 00 02` at once. § then typed `1`, Shift+§ typed `!`.
+- After unplugging and replugging, § still typed `1`: the remap is stored
+  in flash without `13 55`.
+- `key restore §` sent `14 20 01 00 01`, echoed the same. § typed § again,
+  also after another replug.
 
 ### 2026-11-06, Windows 11, Nordic Everest Max, firmware 57
 
