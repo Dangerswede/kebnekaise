@@ -610,9 +610,16 @@ need more than 30 ms per chunk), and the picture arrived intact. [W]
 It is not a matter of time: in the dial test we re-read the answer every
 10 ms for 100 ms after each `fb`, and it never turned into `fa`; only the
 re-send was taken. So the first send of a chunk is dropped and the re-send
-is the one that counts. Why the keyboard rejects the first send is unknown
-(a Base Camp capture would show whether Base Camp sees the same). The tool
-re-sends at once, as everest-mac does. [W]
+is the one that counts. everest-mac does the same and notes that Mountain's
+own SDK library also re-sends on `fb`: the answer read after a write seems to
+describe the previous write, so every chunk normally goes twice. We treat this
+as the reference behaviour, not a fault. The tool re-sends at once. [W] [C]
+
+A Base Camp capture to confirm this was tried on 2026-11-08 and gave nothing:
+Base Camp 1.9.10 crashed inside its own upload code before it sent any
+picture data (dial and D1). The start-up capture did show Base Camp setting
+the keyboard clock (`11 80`, then `11 84 ...` with year-2000, month, day,
+hour, minute, second); not documented further or used yet. [W]
 
 Pictures are stored per profile: the descriptor's profile byte decides which
 of the five profiles' D1..D4 set is written. A real run uses the active
