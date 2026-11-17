@@ -10,7 +10,7 @@ driver installation, no firmware flashing.
 > **Status: early.** Phase 1 (read-only CLI), phase 2 (lighting: static
 > colour, built-in effects, per-key colours) and phase 3 (pictures on the
 > display keys and the dial) work on Windows 11 and on Linux (CachyOS, without
-> root). The dial upload has so far only been tested on Windows.
+> root).
 > This project is not affiliated with Mountain or Listan.
 
 ## Usage
@@ -96,7 +96,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 | 0 | Research and plan (done) |
 | 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows and Linux verified) |
 | 2 | RGB: static colour, brightness, per-key colours, built-in effects (verified on Windows and Linux) |
-| 3 | Display keys and dial screen: upload your own pictures (display keys verified on Windows and Linux, dial on Windows) |
+| 3 | Display keys and dial screen: upload your own pictures (verified on Windows and Linux) |
 | 4 | Profiles and key bindings: read, write, export, import |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |
 

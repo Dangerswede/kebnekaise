@@ -18,8 +18,9 @@ Seen on CachyOS (2026-11-17, firmware 57, kernel hidraw, no root after the
 udev rule): interfaces 0 and 2 are keyboard input, interface 1 carries mouse,
 system control and consumer collections on one node, and interface 3 is
 `commands (vendor 0xFF00)` with the usage page exposed. `info`, `rgb static`,
-`rgb effect`, `rgb keys` and `picture key` all behaved as on Windows; the D1
-upload felt faster than on Windows.
+`rgb effect`, `rgb keys`, `picture key` and `picture dial` all behaved as on
+Windows; the D1 upload felt faster. The dial upload took 132 s (about the same
+as on Windows), with about half the chunks re-sent as expected on firmware 57.
 
 ## Windows
 
