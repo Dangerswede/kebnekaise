@@ -880,6 +880,8 @@ earlier) and echoed `17 AB`, `17 AC`, `17 AD` exactly [W]. All four keys were
 reported in byte 42 afterwards. `ff aa` is also the answer to an empty
 `11 02` read; whether it means "rejected" or "nothing selected" here, and
 whether `12 08` is needed at all, is [U].
+After this, D1..D4 all sent nothing to the computer when pressed (no
+Downloads, no sleep, no system monitor) and were still reported [W].
 
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory
