@@ -872,8 +872,10 @@ other codes, and the identity remap is proven to restore a key. The tool:
 
 Seen working on hardware for every key in the table (2026-11-17, Linux) [W].
 
-Unknown [U]: whether a remap belongs to the active hardware profile or to
-all profiles. All tests so far ran on profile 1 only.
+A remap belongs to the active hardware profile, not to all profiles
+(2026-11-17: a remap sent on profile 2 did not change profile 1) [W]. On a
+profile that was never set up (lighting slot `ff`), the remap is echoed but
+has no visible effect [W]; why is [U].
 
 Test planned (approved 2026-11-17): `kebnekaise profile switch <n>` sends
 only `14 00 00 00 <n> <slot>` (keeping the active lighting slot unless
@@ -950,6 +952,13 @@ Only profile 1 is shown in the keyboard's menu (`11 14` bytes 15..19 =
 `ff` in byte 11 (lighting slot). So the keyboard accepts the switch, and an
 uninitialised profile reports slot `ff` [W]. Switching from such a profile
 needs an explicit slot, since `ff` is not a valid slot.
+
+Then, with profile 2 active, `key remap grave 1` (`14 20 01 00 02`) was
+echoed, but § still typed §. After `profile switch 1 --slot 0`, § also typed
+§ on profile 1. So a remap sent while profile 2 is active does not reach
+profile 1: remaps are not one global table. Whether profile 2 stores the
+remap and ignores it because it was never set up, or stores it and needs to
+be set up first, is [U].
 
 ### 2026-11-17, all table remaps (same keyboard, CachyOS Linux, firmware 57)
 
