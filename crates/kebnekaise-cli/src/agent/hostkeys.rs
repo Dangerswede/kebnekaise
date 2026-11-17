@@ -332,6 +332,7 @@ pub fn compile_macro(layout: HostLayout, m: &Macro) -> Result<Vec<Event>, String
 
 /// Every key code the agent may ever press, for registering the virtual
 /// keyboard.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn all_codes() -> Vec<u16> {
     let mut v: Vec<u16> = (1..=127).collect();
     v.extend(163..=166);
