@@ -89,6 +89,20 @@ pub enum ProfileCommand {
     Check { file: PathBuf },
     /// Show what a profile file contains.
     Show { file: PathBuf },
+    /// Make another keyboard profile (1..5) active (`14 00`). Changes
+    /// nothing else: no lighting is written or saved.
+    Switch {
+        /// Keyboard profile 1..5.
+        number: u8,
+        /// Lighting slot to show (0..8). Default: the slot active now.
+        #[arg(long)]
+        slot: Option<u8>,
+        /// Print the packet instead of sending it.
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        hw: HwArgs,
+    },
     /// Write a profile's lighting and remaps to the keyboard. Display-key
     /// markers are not sent yet.
     Apply {
@@ -412,8 +426,59 @@ fn apply_profile(p: &Profile, checked: &Checked, hw: &HwArgs) -> CliResult {
     Ok(ExitCode::SUCCESS)
 }
 
+/// `profile switch` for real.
+fn switch_profile(number: u8, slot: Option<u8>, hw: &HwArgs) -> CliResult {
+    let (transport, report) = match connect(hw)? {
+        Ok(c) => c,
+        Err(code) => return Ok(code),
+    };
+    let slot = slot.unwrap_or(report.firmware.lighting_slot.as_byte());
+    let plan = LightingPlan::switch(number, slot)?;
+    println!(
+        "Firmware {}, profile {}, lighting slot {} before.",
+        report.firmware.version,
+        active_profile(&report),
+        report.firmware.lighting_slot
+    );
+    let mut keyboard = Keyboard::for_lighting(transport).with_query_options(query_options(hw));
+    let outcome = keyboard.apply_lighting(&plan, report.write_gate)?;
+    println!(
+        "Sent {}. Now: profile {}, lighting slot {}.",
+        hex(trimmed(plan.steps[0].packet.as_bytes())),
+        outcome
+            .firmware_after
+            .active_profile
+            .map_or("?".into(), |n| n.to_string()),
+        outcome.firmware_after.lighting_slot
+    );
+    if !outcome.verified {
+        eprintln!("warning: the keyboard does not report profile {number}, slot {slot}.");
+        return Ok(ExitCode::from(1));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 pub fn run_profile(command: ProfileCommand) -> CliResult {
     match command {
+        ProfileCommand::Switch {
+            number,
+            slot,
+            dry_run,
+            hw,
+        } => {
+            if !dry_run {
+                return switch_profile(number, slot, &hw);
+            }
+            let slot = slot.unwrap_or(0);
+            let plan = LightingPlan::switch(number, slot)?;
+            print_steps(&[PlanStep {
+                packet: plan.steps[0].packet.clone(),
+                wait_after_ms: plan.steps[0].wait_after.as_millis() as u64,
+                note: format!("switch: profile {number}, lighting slot {slot}"),
+            }]);
+            println!("\nA real run without --slot keeps the lighting slot that is active now.");
+            Ok(ExitCode::SUCCESS)
+        }
         ProfileCommand::Template { out: None } => {
             print!("{}", Profile::template());
             Ok(ExitCode::SUCCESS)

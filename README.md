@@ -62,6 +62,7 @@ kebnekaise profile template --out work.toml
 kebnekaise profile check work.toml
 kebnekaise profile apply work.toml --dry-run
 kebnekaise profile apply work.toml
+kebnekaise profile switch 2                # make keyboard profile 2 active
 ```
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).

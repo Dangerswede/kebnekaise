@@ -77,6 +77,20 @@ fn dim(c: Rgb, brightness: u8) -> Rgb {
 }
 
 impl LightingPlan {
+    /// Only `14 00`: make `profile` active with lighting slot `slot`.
+    /// Nothing is changed or saved; the keyboard shows what that slot of
+    /// that profile already holds.
+    pub fn switch(profile: u8, slot: u8) -> Result<Self, LightingError> {
+        Ok(LightingPlan {
+            steps: vec![step(Packet::switch_slot(profile, slot)?, AFTER_SWITCH)],
+            expected: Expected {
+                profile,
+                lighting_slot: slot,
+            },
+            saves: false,
+        })
+    }
+
     /// A built-in effect: switch to its slot, send the parameters, and
     /// (when `save`) save the slot to flash, as Base Camp does.
     pub fn effect(
@@ -192,6 +206,19 @@ mod tests {
     use everest_proto::{Effect, Group, SafetyClass};
 
     use super::*;
+
+    #[test]
+    fn switch_is_one_volatile_packet() {
+        let plan = LightingPlan::switch(2, 0).unwrap();
+        assert_eq!(plan.steps.len(), 1);
+        assert!(!plan.saves);
+        assert_eq!(
+            &plan.steps[0].packet.as_bytes()[..6],
+            &[0x14, 0, 0, 0, 2, 0]
+        );
+        assert!(plan.dry_run().is_ok());
+        assert!(LightingPlan::switch(6, 0).is_err());
+    }
 
     fn static_red(brightness: u8) -> EffectSettings {
         EffectSettings::new(

@@ -875,6 +875,14 @@ Seen working on hardware for every key in the table (2026-11-17, Linux) [W].
 Unknown [U]: whether a remap belongs to the active hardware profile or to
 all profiles. All tests so far ran on profile 1 only.
 
+Test planned (approved 2026-11-17): `kebnekaise profile switch <n>` sends
+only `14 00 00 00 <n> <slot>` (keeping the active lighting slot unless
+`--slot` is given) and verifies it with `11 00`; nothing is written or saved.
+On a keyboard where only profile 1 is shown in the menu, switch to profile 2,
+remap § there, switch back to profile 1 and press §. Afterwards restore §
+in both profiles. Whether the keyboard accepts a profile that is not shown
+in its menu is part of the test.
+
 ## Commands: DENY (never sent by this project)
 
 | Packet | What it is | Why denied |
