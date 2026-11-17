@@ -150,6 +150,53 @@ impl<T: Transport> Keyboard<T> {
         }
     }
 
+    /// A session that may send display-key actions (`12 08`, `17 AA`).
+    pub fn for_actions(transport: T) -> Self {
+        Keyboard {
+            session: Session::new(transport, Policy::Actions),
+            options: QueryOptions::default(),
+        }
+    }
+
+    /// Sends display-key action packets in order (`12 08` slot select,
+    /// then `17 AA` text) and returns what the keyboard sent in the
+    /// `listen` after each. Refuses unless `gate` allows writes and the
+    /// session was opened with [`Keyboard::for_actions`].
+    pub fn store_action(
+        &mut self,
+        packets: &[Packet],
+        gate: WriteGate,
+        listen: std::time::Duration,
+    ) -> Result<Vec<Vec<[u8; PACKET_SIZE]>>> {
+        if let WriteGate::Refused { firmware } = gate {
+            return Err(Error::WritesRefused(firmware));
+        }
+        if self.session.policy() != Policy::Actions {
+            return Err(Error::ReadOnlySession);
+        }
+        if let Some(p) = packets
+            .iter()
+            .find(|p| p.classification().group != everest_proto::Group::Actions)
+        {
+            return Err(Error::Precondition(format!(
+                "{p:?} is not a display-key action"
+            )));
+        }
+        self.session.drain()?;
+        let mut seen = Vec::new();
+        for p in packets {
+            self.session.send(p)?;
+            seen.push(self.session.listen(listen)?);
+        }
+        Ok(seen)
+    }
+
+    /// Waits up to `duration` and returns every packet the keyboard sends
+    /// on its own (event reports). Sends nothing.
+    pub fn listen(&mut self, duration: std::time::Duration) -> Result<Vec<[u8; PACKET_SIZE]>> {
+        Ok(self.session.listen(duration)?)
+    }
+
     /// Sends one key remap (`14 20`) and returns the packets the keyboard
     /// sent in the next `listen` (no reply is documented). Refuses unless
     /// `gate` allows writes and the session was opened with

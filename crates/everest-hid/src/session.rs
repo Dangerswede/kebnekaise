@@ -29,6 +29,11 @@ pub enum Policy {
     ///
     /// Only for sessions whose writes were cleared by the firmware gate.
     Keymap,
+    /// Phase 4: queries plus display-key actions (`12 08` and `17 AA` in
+    /// their documented form). Nothing else.
+    ///
+    /// Only for sessions whose writes were cleared by the firmware gate.
+    Actions,
 }
 
 impl Policy {
@@ -42,6 +47,7 @@ impl Policy {
                 c.group == Group::Pictures
             }
             (Policy::Keymap, SafetyClass::Persist) => c.group == Group::Keymap,
+            (Policy::Actions, SafetyClass::Persist) => c.group == Group::Actions,
             _ => false,
         }
     }
@@ -451,5 +457,23 @@ mod tests {
             let c = everest_proto::classify(&p);
             assert!(!Policy::Keymap.allows(&c), "{}", c.name);
         }
+    }
+
+    #[test]
+    fn actions_policy_allows_only_actions() {
+        use everest_proto::{ActionText, DKey, KeyPos, StoredKind};
+        let d1 = DKey::new(1).unwrap();
+        for p in [
+            Packet::action_slot(d1),
+            Packet::action_text(StoredKind::Url, &ActionText::marker(d1)),
+        ] {
+            let c = p.classification();
+            assert!(Policy::Actions.allows(&c), "{}", c.name);
+            assert!(!Policy::Keymap.allows(&c), "{}", c.name);
+            assert!(!Policy::Lighting.allows(&c), "{}", c.name);
+        }
+        let grave = KeyPos::from_name("grave").unwrap();
+        assert!(!Policy::Actions.allows(&Packet::remap(grave, grave).classification()));
+        assert!(!Policy::Actions.allows(&Packet::switch_slot(1, 0).unwrap().classification()));
     }
 }
