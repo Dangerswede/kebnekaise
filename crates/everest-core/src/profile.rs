@@ -411,7 +411,7 @@ impl Profile {
                 note: format!("{key}: select action slot"),
             });
             steps.push(PlanStep {
-                packet: Packet::action_text(StoredKind::Url, &ActionText::marker(*key)),
+                packet: Packet::action_text(*key, StoredKind::Url, &ActionText::marker(*key)),
                 wait_after_ms: KEY_PACKET_PAUSE_MS,
                 note: format!("{key}: store marker (the agent runs the action)"),
             });

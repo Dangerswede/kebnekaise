@@ -150,7 +150,7 @@ impl<T: Transport> Keyboard<T> {
         }
     }
 
-    /// A session that may send display-key actions (`12 08`, `17 AA`).
+    /// A session that may send display-key actions (`12 08`, `17 AA..AD`).
     pub fn for_actions(transport: T) -> Self {
         Keyboard {
             session: Session::new(transport, Policy::Actions),
@@ -159,7 +159,7 @@ impl<T: Transport> Keyboard<T> {
     }
 
     /// Sends display-key action packets in order (`12 08` slot select,
-    /// then `17 AA` text) and returns what the keyboard sent in the
+    /// then `17 AA..AD` text) and returns what the keyboard sent in the
     /// `listen` after each. Refuses unless `gate` allows writes and the
     /// session was opened with [`Keyboard::for_actions`].
     pub fn store_action(

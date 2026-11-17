@@ -192,7 +192,7 @@ Exact sequences, byte layouts and allowlist rules: [Lighting (phase 2)](#lightin
 | `14 2C <effect> 00 <speed> <brightness> ...` | Built-in effect parameters for the current slot (details below). Persists only after `13 55`. | [C] |
 | `13 55 00 00 <slot>` | Save the slot to flash (`SaveFlash`) | [C] |
 | `11 14` write form | Dial mode, dock colour, display brightness, screensaver. Layout below. Persistence assumed, not proven. | [C] |
-| `12 08 00 <key 1..4>` then `17 AA <len> 00 <type> <ascii>` | Store a host action for display key D1..D4 (`len` = 1 + string length, max 55 chars; type `0x02` URL, `0x04` shell). Also arms the D-key event reports. | [C] |
+| `12 08 00 <key 1..4>` then `17 <AA..AD> <len> 00 <type> <ascii>` | Store a host action for display key D1..D4 (byte 1 of `17` = the key's code, `AA` = D1 .. `AD` = D4) (`len` = 1 + string length, max 55 chars; type `0x02` URL, `0x04` shell). Also arms the D-key event reports. | [C] |
 | `11 00` then `11 02 00 01 01 <iid> 02` | Select a built-in icon for a display key; `iid = 0x40 + key*9 + variant` | [P] |
 | `14 20 <key> 00 <newkey>` | Remap a key in the current profile (position codes, see [Keys and display-key actions (phase 4)](#keys-and-display-key-actions-phase-4)) | [P], not hardware-verified by any source |
 | `14 21 <key> 00 <newkey> <mods>` | Remap with a modifier byte whose meaning is unknown. **Denied** until it is understood. | [U] |
@@ -800,12 +800,12 @@ only accepts byte 5 = 0 and a target from the table.
 `14 21` (`ChangeShortcutKey`, two value bytes) is **denied** until we know
 what the two bytes mean.
 
-### Display-key actions: `12 08` + `17 AA`
+### Display-key actions: `12 08` + `17 AA..AD`
 
 | # | Packet | Content |
 |---|---|---|
 | 1 | `12 08 00 <1..4>` | select the action slot of D1..D4, rest zero |
-| 2 | `17 AA <len> 00 <kind> <text>` | `len` = 1 + text length, `kind` `02` URL or `04` shell command, text printable ASCII, 1..55 bytes, rest zero |
+| 2 | `17 <code> <len> 00 <kind> <text>` | `code` = `AA` (D1), `AB` (D2), `AC` (D3), `AD` (D4); `len` = 1 + text length, `kind` `02` URL or `04` shell command, text printable ASCII, 1..55 bytes, rest zero |
 
 [C] for the layout (everest-mac and BaseCamp-Linux agree). Whether the slot
 is per profile is [P]. What the factory D-key functions are, and whether a
@@ -823,7 +823,7 @@ only try to open a URL that goes nowhere.
 | `14 20` | byte 3 `00`, bytes 2 and 4 both in the code table, rest zero |
 | `14 21` | never |
 | `12 08` | byte 2 `00`, key 1..4, rest zero |
-| `17 AA` | length 2..56, byte 3 `00`, kind `02` or `04`, text printable ASCII of exactly length - 1 bytes, rest zero |
+| `17 AA..AD` | length 2..56, byte 3 `00`, kind `02` or `04`, text printable ASCII of exactly length - 1 bytes, rest zero |
 
 Remaps are in the `keymap` group and actions in the `actions` group. The
 `Keymap` session policy allows reads and `keymap` packets, nothing else;
@@ -863,6 +863,25 @@ the event report stays: exactly what the agent needs.
 
 After a replug D1 still sent no shortcut and was still reported; D2 still
 opened Downloads. So the stored action is kept in flash [W].
+
+**Byte 1 of `17` is the key, not a constant (2026-11-17).** everest-mac
+always sends `17 AA` after `12 08 00 <n>`. With that form, arming D2, D3 and
+D4 (each `12 08 00 <n>` + `17 AA ...`, all echoed) left D2 and D4 sending
+their factory shortcuts [W]. Base Camp's `SetLaunchContent` puts the key
+code in byte 1, and `BaseCamp.db` gives D1..D4 the codes `AA`..`AD` [D], so
+`17 AA` only ever wrote D1. From this date the tool sends `17 AB` for D2,
+`17 AC` for D3 and `17 AD` for D4, still after `12 08 00 <n>` (its role
+stays [U]). The marker text also names the key (`kebnekaise:d<n>`), so a
+mismatch is visible in the packet.
+
+Re-arming with the right codes (2026-11-17): for D2, D3 and D4 the keyboard
+answered `12 08 00 <n>` with `ff aa` (where D1's `12 08 00 01` was echoed
+earlier) and echoed `17 AB`, `17 AC`, `17 AD` exactly [W]. All four keys were
+reported in byte 42 afterwards. `ff aa` is also the answer to an empty
+`11 02` read; whether it means "rejected" or "nothing selected" here, and
+whether `12 08` is needed at all, is [U].
+After this, D1..D4 all sent nothing to the computer when pressed (no
+Downloads, no sleep, no system monitor) and were still reported [W].
 
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory

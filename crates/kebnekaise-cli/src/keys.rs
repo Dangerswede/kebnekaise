@@ -68,7 +68,7 @@ pub enum KeyCommand {
         hw: HwArgs,
     },
     /// Arm a display key so the keyboard reports its presses (`12 08` +
-    /// `17 AA` with the marker `kebnekaise:d<n>`). Replaces the key's own
+    /// `17 AA..AD` with the marker `kebnekaise:d<n>`). Replaces the key's own
     /// function (factory: Win+<n>).
     Arm {
         /// D1..D4.
@@ -215,7 +215,7 @@ pub fn run_key(command: KeyCommand) -> CliResult {
             print_steps(&[
                 one(Packet::action_slot(k), format!("{k}: select action slot")),
                 one(
-                    Packet::action_text(StoredKind::Url, &ActionText::marker(k)),
+                    Packet::action_text(k, StoredKind::Url, &ActionText::marker(k)),
                     format!("{k}: store marker"),
                 ),
             ]);
@@ -443,7 +443,7 @@ fn arm_dkey(key: DKey, hw: &HwArgs) -> CliResult {
     };
     let packets = [
         Packet::action_slot(key),
-        Packet::action_text(StoredKind::Url, &ActionText::marker(key)),
+        Packet::action_text(key, StoredKind::Url, &ActionText::marker(key)),
     ];
     println!(
         "Firmware {}, profile {}: arming {key}.",
