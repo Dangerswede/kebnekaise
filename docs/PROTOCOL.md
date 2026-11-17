@@ -874,6 +874,13 @@ code in byte 1, and `BaseCamp.db` gives D1..D4 the codes `AA`..`AD` [D], so
 stays [U]). The marker text also names the key (`kebnekaise:d<n>`), so a
 mismatch is visible in the packet.
 
+Re-arming with the right codes (2026-11-17): for D2, D3 and D4 the keyboard
+answered `12 08 00 <n>` with `ff aa` (where D1's `12 08 00 01` was echoed
+earlier) and echoed `17 AB`, `17 AC`, `17 AD` exactly [W]. All four keys were
+reported in byte 42 afterwards. `ff aa` is also the answer to an empty
+`11 02` read; whether it means "rejected" or "nothing selected" here, and
+whether `12 08` is needed at all, is [U].
+
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory
 picture; it needs its own yes.
