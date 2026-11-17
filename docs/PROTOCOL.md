@@ -870,8 +870,10 @@ other codes, and the identity remap is proven to restore a key. The tool:
   `hardware_profile` is already active, since it does not switch profiles
   on its own. Display-key markers are skipped with a note.
 
+Seen working on hardware for every key in the table (2026-11-17, Linux) [W].
+
 Unknown [U]: whether a remap belongs to the active hardware profile or to
-all profiles. The first test ran on profile 1 only.
+all profiles. All tests so far ran on profile 1 only.
 
 ## Commands: DENY (never sent by this project)
 
@@ -931,6 +933,22 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 12. Pixel row order and orientation of the dial image (see [Pictures (phase 3)](#pictures-phase-3)).
 
 ## Hardware observations
+
+### 2026-11-17, all table remaps (same keyboard, CachyOS Linux, firmware 57)
+
+On profile 1, with no other profile shown in the keyboard's menu:
+
+- `key remap a o` (`14 20 1f 00 19`) was echoed. A typed o and Shift+A typed O.
+  `key restore a` was echoed and A typed a again.
+- `profile apply` with `grave = "1"` and `caps = "lctrl"` (no `[lighting]`)
+  sent both remaps. Both were echoed, § typed 1, and Caps acted as left Ctrl.
+- `key restore all` sent 105 identity remaps, every code in the position
+  table. All were echoed, with no `NO ECHO`, and the keys typed their own
+  characters again.
+
+So every code in the table is accepted, and remaps behave the same on Linux
+as on Windows. Whether a remap is per profile is still [U]: only profile 1 is
+shown on this keyboard (see "show profile" in `11 14`).
 
 ### 2026-11-08, first key remap (same keyboard, Windows 11, firmware 57)
 
