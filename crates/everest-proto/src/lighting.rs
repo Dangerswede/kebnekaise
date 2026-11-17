@@ -70,6 +70,8 @@ pub enum LightingError {
     BadColor(String),
     #[error("profile {0} is out of range (1..=5)")]
     BadProfile(u8),
+    #[error("lighting slot {0} is out of range (0..=8)")]
+    BadSlot(u8),
     #[error("brightness {0} is out of range (0..=100)")]
     BadBrightness(u8),
     #[error("speed {0} is out of range (1..=5, 1 = slowest)")]

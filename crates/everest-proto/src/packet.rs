@@ -46,7 +46,9 @@ impl Packet {
         if !PROFILES.contains(&profile) {
             return Err(LightingError::BadProfile(profile));
         }
-        assert!(slot <= 8, "lighting slot {slot} out of range");
+        if slot > 8 {
+            return Err(LightingError::BadSlot(slot));
+        }
         Ok(Self::from_prefix(&[0x14, 0x00, 0x00, 0x00, profile, slot]))
     }
 

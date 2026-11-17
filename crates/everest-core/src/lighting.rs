@@ -218,6 +218,7 @@ mod tests {
         );
         assert!(plan.dry_run().is_ok());
         assert!(LightingPlan::switch(6, 0).is_err());
+        assert!(LightingPlan::switch(1, 0xff).is_err());
     }
 
     fn static_red(brightness: u8) -> EffectSettings {
