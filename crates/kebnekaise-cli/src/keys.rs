@@ -461,9 +461,16 @@ fn switch_profile(number: u8, slot: Option<u8>, hw: &HwArgs) -> CliResult {
             .map_or("?".into(), |n| n.to_string()),
         outcome.firmware_after.lighting_slot
     );
-    if !outcome.verified {
-        eprintln!("warning: the keyboard does not report profile {number}, slot {slot}.");
+    if outcome.firmware_after.active_profile != Some(number) {
+        eprintln!("warning: the keyboard does not report profile {number}.");
         return Ok(ExitCode::from(1));
+    }
+    if !outcome.verified {
+        println!(
+            "Profile {number} is active. Its lighting slot reads {} rather than {slot}: \
+             a profile that was never set up reports ff. Nothing else changed.",
+            outcome.firmware_after.lighting_slot
+        );
     }
     Ok(ExitCode::SUCCESS)
 }
