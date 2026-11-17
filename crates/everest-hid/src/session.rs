@@ -29,7 +29,7 @@ pub enum Policy {
     ///
     /// Only for sessions whose writes were cleared by the firmware gate.
     Keymap,
-    /// Phase 4: queries plus display-key actions (`12 08` and `17 AA` in
+    /// Phase 4: queries plus display-key actions (`12 08` and `17 AA..AD` in
     /// their documented form). Nothing else.
     ///
     /// Only for sessions whose writes were cleared by the firmware gate.
@@ -465,7 +465,7 @@ mod tests {
         let d1 = DKey::new(1).unwrap();
         for p in [
             Packet::action_slot(d1),
-            Packet::action_text(StoredKind::Url, &ActionText::marker(d1)),
+            Packet::action_text(d1, StoredKind::Url, &ActionText::marker(d1)),
         ] {
             let c = p.classification();
             assert!(Policy::Actions.allows(&c), "{}", c.name);

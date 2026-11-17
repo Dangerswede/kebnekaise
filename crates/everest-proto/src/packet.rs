@@ -174,11 +174,22 @@ impl Packet {
         Self::from_prefix(&[0x12, 0x08, 0x00, key.number()])
     }
 
-    /// `17 AA <len> 00 <kind> <text>`: the text for the selected action
-    /// slot; `len` = 1 + text length.
-    pub fn action_text(kind: crate::StoredKind, text: &crate::ActionText) -> Self {
+    /// `17 <AA..AD> <len> 00 <kind> <text>`: the launch content of display
+    /// key D1..D4 (Base Camp's `SetLaunchContent`, key code in byte 1);
+    /// `len` = 1 + text length.
+    pub fn action_text(
+        key: crate::DKey,
+        kind: crate::StoredKind,
+        text: &crate::ActionText,
+    ) -> Self {
         let t = text.as_str().as_bytes();
-        let mut p = Self::from_prefix(&[0x17, 0xAA, (t.len() + 1) as u8, 0x00, kind.byte()]);
+        let mut p = Self::from_prefix(&[
+            0x17,
+            key.launch_code(),
+            (t.len() + 1) as u8,
+            0x00,
+            kind.byte(),
+        ]);
         p.0[5..5 + t.len()].copy_from_slice(t);
         p
     }

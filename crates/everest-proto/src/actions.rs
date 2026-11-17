@@ -32,6 +32,12 @@ impl DKey {
         self.0
     }
 
+    /// Base Camp's key code for this display key (`AA`..`AD`), byte 1 of
+    /// its `17` launch-content packet.
+    pub fn launch_code(self) -> u8 {
+        0xA9 + self.0
+    }
+
     /// The bit of this key in byte 42 of a `01` event report.
     pub fn event_bit(self) -> u8 {
         0x02 << (self.0 - 1)
@@ -165,5 +171,7 @@ mod tests {
         assert!(ActionText::new("åäö").is_err());
         assert!(ActionText::new("a\nb").is_err());
         assert_eq!(ActionText::marker(DKey(2)).as_str(), "kebnekaise:d2");
+        assert_eq!(DKey(1).launch_code(), 0xAA);
+        assert_eq!(DKey(4).launch_code(), 0xAD);
     }
 }

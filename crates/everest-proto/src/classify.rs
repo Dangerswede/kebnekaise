@@ -121,7 +121,7 @@ fn classify_action(bytes: &[u8]) -> Classification {
         (0x12, 0x08) if at(2) == 0 && (1..=4).contains(&at(3)) && zero_from(4) => {
             g("action slot select", SafetyClass::Persist, Group::Actions)
         }
-        (0x17, 0xAA) => {
+        (0x17, 0xAA..=0xAD) => {
             let len = usize::from(at(2));
             let text_len = len.wrapping_sub(1);
             let ok = (2..=crate::actions::MAX_ACTION_TEXT + 1).contains(&len)
@@ -220,7 +220,7 @@ pub fn classify(bytes: &[u8]) -> Classification {
         (0x11, 0x81) => c("dial metric", Volatile),
         (0x11, 0x83) => c("dial volume", Volatile),
         (0x11, 0x84) => c("clock set", Volatile),
-        (0x12, 0x08) | (0x17, 0xAA) => classify_action(bytes),
+        (0x12, 0x08) | (0x17, 0xAA..=0xAD) => classify_action(bytes),
         (0x13, 0x40) => c("flash reset", Deny),
         (0x13, 0x41) | (0x13, 0x42) => classify_picture_reset(bytes),
         (0x13, 0x55) | (0x14, 0x00) | (0x14, 0x2C) | (0x14, 0x2D) | (0x14, 0xA0) => {
@@ -450,6 +450,7 @@ mod tests {
             pad(&[0x17, 0xAA, 0x03, 0x00, 0x02, b'h', 0x0A]), // not printable
             pad(&[0x17, 0xAA, 0x01, 0x00, 0x02]),             // empty
             pad(&[0x17, 0xAA, 0x40, 0x00, 0x02]),             // too long
+            pad(&[0x17, 0xAE, 0x03, 0x00, 0x02, b'h', b'i']), // not a display key
         ] {
             assert_eq!(classify(&bad).class, SafetyClass::Deny, "{bad:02x?}");
         }
@@ -473,12 +474,15 @@ mod tests {
                 Packet::action_slot(k).classification().group,
                 Group::Actions
             );
-            let t = Packet::action_text(StoredKind::Url, &ActionText::marker(k));
+            let t = Packet::action_text(k, StoredKind::Url, &ActionText::marker(k));
             assert_eq!(t.classification().group, Group::Actions);
-            assert_eq!(&t.as_bytes()[..5], &[0x17, 0xAA, 14, 0x00, 0x02]);
+            assert_eq!(
+                &t.as_bytes()[..5],
+                &[0x17, 0xA9 + k.number(), 14, 0x00, 0x02]
+            );
         }
         let long = ActionText::new(&"x".repeat(55)).unwrap();
-        let t = Packet::action_text(StoredKind::Shell, &long);
+        let t = Packet::action_text(DKey::ALL[3], StoredKind::Shell, &long);
         assert_eq!(t.classification().class, SafetyClass::Persist);
     }
 }
