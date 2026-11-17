@@ -433,7 +433,17 @@ fn switch_profile(number: u8, slot: Option<u8>, hw: &HwArgs) -> CliResult {
         Err(code) => return Ok(code),
     };
     let slot = slot.unwrap_or(report.firmware.lighting_slot.as_byte());
-    let plan = LightingPlan::switch(number, slot)?;
+    let plan = match LightingPlan::switch(number, slot) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}. Nothing was written.");
+            eprintln!(
+                "The active lighting slot is {}; pass --slot (0 is the static slot).",
+                report.firmware.lighting_slot
+            );
+            return Ok(ExitCode::from(1));
+        }
+    };
     println!(
         "Firmware {}, profile {}, lighting slot {} before.",
         report.firmware.version,

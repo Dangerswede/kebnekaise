@@ -942,6 +942,15 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 
 ## Hardware observations
 
+### 2026-11-17, switching to a profile not shown in the menu (same keyboard, Linux)
+
+Only profile 1 is shown in the keyboard's menu (`11 14` bytes 15..19 =
+`01 12 13 14 15`). `kebnekaise profile switch 2` sent `14 00 00 00 02 00`
+(profile 2, slot 0). `11 00` then reported profile 2 in byte 10 but
+`ff` in byte 11 (lighting slot). So the keyboard accepts the switch, and an
+uninitialised profile reports slot `ff` [W]. Switching from such a profile
+needs an explicit slot, since `ff` is not a valid slot.
+
 ### 2026-11-17, all table remaps (same keyboard, CachyOS Linux, firmware 57)
 
 On profile 1, with no other profile shown in the keyboard's menu:
