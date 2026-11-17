@@ -6,6 +6,7 @@
 //! `picture` (phase 3) converts images for the display keys and the dial;
 //! uploads write to the keyboard, the picture resets are dry run only.
 
+mod keys;
 mod picture;
 
 use std::process::ExitCode;
@@ -77,6 +78,16 @@ enum Command {
     Picture {
         #[command(subcommand)]
         command: picture::PictureCommand,
+    },
+    /// Key remaps (phase 4). Display-key arming is still dry run only.
+    Key {
+        #[command(subcommand)]
+        command: keys::KeyCommand,
+    },
+    /// Profile files: template, check, show, apply (phase 4).
+    Profile {
+        #[command(subcommand)]
+        command: keys::ProfileCommand,
     },
 }
 
@@ -235,6 +246,8 @@ fn main() -> ExitCode {
         ),
         Command::Rgb { command } => rgb(command),
         Command::Picture { command } => picture::run(command),
+        Command::Key { command } => keys::run_key(command),
+        Command::Profile { command } => keys::run_profile(command),
     };
     match result {
         Ok(code) => code,
