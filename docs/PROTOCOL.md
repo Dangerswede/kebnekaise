@@ -846,6 +846,14 @@ Questions the test answers:
 2. Are D1 presses reported in byte 42 before arming, after arming, or both?
 3. Does the action survive a replug?
 
+Before arming (2026-11-17, Linux, profile 1, factory D-key functions):
+`key listen` printed D1, D2 and D3 presses and releases, so the keyboard
+reports D-key presses in byte 42 **without** arming [W]. At the same time
+each key sent its factory shortcut to the computer (KDE): D1 toggled Num
+Lock, D2 opened the Downloads folder, D3 put the computer to sleep, D4
+opened the system monitor [W]. So arming is not needed for the reports;
+the question is whether it stops the shortcut.
+
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory
 picture; it needs its own yes.
