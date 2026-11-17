@@ -6,6 +6,7 @@
 //! `picture` (phase 3) converts images for the display keys and the dial;
 //! uploads write to the keyboard, the picture resets are dry run only.
 
+mod agent;
 mod keys;
 mod picture;
 
@@ -89,6 +90,9 @@ enum Command {
         #[command(subcommand)]
         command: keys::ProfileCommand,
     },
+    /// Run the display-key actions of a profile file: listens for D1..D4
+    /// and opens URLs, starts programs, presses keys or plays macros.
+    Agent(agent::AgentArgs),
 }
 
 #[derive(Subcommand)]
@@ -248,6 +252,7 @@ fn main() -> ExitCode {
         Command::Picture { command } => picture::run(command),
         Command::Key { command } => keys::run_key(command),
         Command::Profile { command } => keys::run_profile(command),
+        Command::Agent(args) => agent::run_agent(args),
     };
     match result {
         Ok(code) => code,

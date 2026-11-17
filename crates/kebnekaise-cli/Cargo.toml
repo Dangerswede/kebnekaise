@@ -18,3 +18,7 @@ everest-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap = { version = "4.5", features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# uinput ioctls for the agent's virtual keyboard.
+libc = "0.2"
