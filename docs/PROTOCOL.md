@@ -870,8 +870,20 @@ other codes, and the identity remap is proven to restore a key. The tool:
   `hardware_profile` is already active, since it does not switch profiles
   on its own. Display-key markers are skipped with a note.
 
-Unknown [U]: whether a remap belongs to the active hardware profile or to
-all profiles. The first test ran on profile 1 only.
+Seen working on hardware for every key in the table (2026-11-17, Linux) [W].
+
+A remap belongs to the active hardware profile, not to all profiles
+(2026-11-17: a remap sent on profile 2 did not change profile 1) [W]. On a
+profile that was never set up (lighting slot `ff`), the remap is echoed but
+has no visible effect [W]; why is [U].
+
+Test planned (approved 2026-11-17): `kebnekaise profile switch <n>` sends
+only `14 00 00 00 <n> <slot>` (keeping the active lighting slot unless
+`--slot` is given) and verifies it with `11 00`; nothing is written or saved.
+On a keyboard where only profile 1 is shown in the menu, switch to profile 2,
+remap § there, switch back to profile 1 and press §. Afterwards restore §
+in both profiles. Whether the keyboard accepts a profile that is not shown
+in its menu is part of the test.
 
 ## Commands: DENY (never sent by this project)
 
@@ -931,6 +943,38 @@ the same hidraw node; detect them by scanning `/proc/*/fd` for the node. [P]
 12. Pixel row order and orientation of the dial image (see [Pictures (phase 3)](#pictures-phase-3)).
 
 ## Hardware observations
+
+### 2026-11-17, switching to a profile not shown in the menu (same keyboard, Linux)
+
+Only profile 1 is shown in the keyboard's menu (`11 14` bytes 15..19 =
+`01 12 13 14 15`). `kebnekaise profile switch 2` sent `14 00 00 00 02 00`
+(profile 2, slot 0). `11 00` then reported profile 2 in byte 10 but
+`ff` in byte 11 (lighting slot). So the keyboard accepts the switch, and an
+uninitialised profile reports slot `ff` [W]. Switching from such a profile
+needs an explicit slot, since `ff` is not a valid slot.
+
+Then, with profile 2 active, `key remap grave 1` (`14 20 01 00 02`) was
+echoed, but § still typed §. After `profile switch 1 --slot 0`, § also typed
+§ on profile 1. So a remap sent while profile 2 is active does not reach
+profile 1: remaps are not one global table. Whether profile 2 stores the
+remap and ignores it because it was never set up, or stores it and needs to
+be set up first, is [U].
+
+### 2026-11-17, all table remaps (same keyboard, CachyOS Linux, firmware 57)
+
+On profile 1, with no other profile shown in the keyboard's menu:
+
+- `key remap a o` (`14 20 1f 00 19`) was echoed. A typed o and Shift+A typed O.
+  `key restore a` was echoed and A typed a again.
+- `profile apply` with `grave = "1"` and `caps = "lctrl"` (no `[lighting]`)
+  sent both remaps. Both were echoed, § typed 1, and Caps acted as left Ctrl.
+- `key restore all` sent 105 identity remaps, every code in the position
+  table. All were echoed, with no `NO ECHO`, and the keys typed their own
+  characters again.
+
+So every code in the table is accepted, and remaps behave the same on Linux
+as on Windows. Whether a remap is per profile is still [U]: only profile 1 is
+shown on this keyboard (see "show profile" in `11 14`).
 
 ### 2026-11-08, first key remap (same keyboard, Windows 11, firmware 57)
 
