@@ -79,12 +79,12 @@ enum Command {
         #[command(subcommand)]
         command: picture::PictureCommand,
     },
-    /// Key remaps and display-key arming (phase 4, dry run only).
+    /// Key remaps (phase 4). Display-key arming is still dry run only.
     Key {
         #[command(subcommand)]
         command: keys::KeyCommand,
     },
-    /// Profile files: template, check, show, apply (phase 4, dry run only).
+    /// Profile files: template, check, show, apply (phase 4).
     Profile {
         #[command(subcommand)]
         command: keys::ProfileCommand,
