@@ -861,6 +861,9 @@ Lock stayed unchanged; nothing happened on the computer) [W]. D2 kept its
 factory shortcut. So storing an action replaces the key's shortcut while
 the event report stays: exactly what the agent needs.
 
+After a replug D1 still sent no shortcut and was still reported; D2 still
+opened Downloads. So the stored action is kept in flash [W].
+
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory
 picture; it needs its own yes.
