@@ -854,6 +854,13 @@ Lock, D2 opened the Downloads folder, D3 put the computer to sleep, D4
 opened the system monitor [W]. So arming is not needed for the reports;
 the question is whether it stops the shortcut.
 
+`key arm D1` then sent `12 08 00 01` and `17 aa 0e 00 02 kebnekaise:d1`;
+the keyboard echoed each packet exactly [W]. Afterwards D1 presses were
+still reported in byte 42, and D1 no longer sent its factory shortcut (Num
+Lock stayed unchanged; nothing happened on the computer) [W]. D2 kept its
+factory shortcut. So storing an action replaces the key's shortcut while
+the event report stays: exactly what the agent needs.
+
 Way back: there is no known "clear action" command. `13 42` (picture reset,
 phase 3) restores the factory D-key shortcuts, but also D1's factory
 picture; it needs its own yes.
