@@ -79,7 +79,7 @@ enum Command {
         #[command(subcommand)]
         command: picture::PictureCommand,
     },
-    /// Key remaps (phase 4). Display-key arming is still dry run only.
+    /// Key remaps and display-key arming (phase 4).
     Key {
         #[command(subcommand)]
         command: keys::KeyCommand,

@@ -827,7 +827,46 @@ only try to open a URL that goes nowhere.
 
 Remaps are in the `keymap` group and actions in the `actions` group. The
 `Keymap` session policy allows reads and `keymap` packets, nothing else;
-no policy allows `actions` yet.
+the `Actions` policy allows reads and `actions` packets, nothing else.
+
+### First display-key test (approved 2026-11-17)
+
+The project owner approved arming one display key on hardware:
+`kebnekaise key arm D1` sends `12 08 00 01`, then
+`17 aa 0e 00 02 kebnekaise:d1`, and prints any non-event packet the keyboard
+sends in the 500 ms after each (no reply is documented).
+`kebnekaise key listen` sends nothing: it reads the event reports for a
+while and prints only the D-key bits of byte 42 of `01` reports; every other
+report is counted, never printed, since it can carry keystrokes.
+
+Questions the test answers:
+
+1. Does D1 still send its factory shortcut (Win+1) after arming, or only
+   the `01` event?
+2. Are D1 presses reported in byte 42 before arming, after arming, or both?
+3. Does the action survive a replug?
+
+Before arming (2026-11-17, Linux, profile 1, factory D-key functions):
+`key listen` printed D1, D2 and D3 presses and releases, so the keyboard
+reports D-key presses in byte 42 **without** arming [W]. At the same time
+each key sent its factory shortcut to the computer (KDE): D1 toggled Num
+Lock, D2 opened the Downloads folder, D3 put the computer to sleep, D4
+opened the system monitor [W]. So arming is not needed for the reports;
+the question is whether it stops the shortcut.
+
+`key arm D1` then sent `12 08 00 01` and `17 aa 0e 00 02 kebnekaise:d1`;
+the keyboard echoed each packet exactly [W]. Afterwards D1 presses were
+still reported in byte 42, and D1 no longer sent its factory shortcut (Num
+Lock stayed unchanged; nothing happened on the computer) [W]. D2 kept its
+factory shortcut. So storing an action replaces the key's shortcut while
+the event report stays: exactly what the agent needs.
+
+After a replug D1 still sent no shortcut and was still reported; D2 still
+opened Downloads. So the stored action is kept in flash [W].
+
+Way back: there is no known "clear action" command. `13 42` (picture reset,
+phase 3) restores the factory D-key shortcuts, but also D1's factory
+picture; it needs its own yes.
 
 ### First hardware test (approved 2026-11-08)
 

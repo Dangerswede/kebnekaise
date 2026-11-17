@@ -1,9 +1,9 @@
 //! `kebnekaise key ...` and `kebnekaise profile ...` (phase 4).
 //!
 //! Remaps (`14 20`) between keys in the position table are approved for
-//! hardware (first test 2026-11-08, all table keys the same day). Display-key
-//! actions (`12 08` + `17 AA`) are not: `key arm` requires `--dry-run`, and a
-//! real `profile apply` sends lighting and remaps but skips the markers.
+//! hardware (first test 2026-11-08, all table keys the same day). `key arm`
+//! (`12 08` + `17 AA`) was approved for its first hardware test on
+//! 2026-11-17; a real `profile apply` still skips the markers.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -68,12 +68,24 @@ pub enum KeyCommand {
         hw: HwArgs,
     },
     /// Arm a display key so the keyboard reports its presses (`12 08` +
-    /// `17 AA`). Dry run only for now.
+    /// `17 AA` with the marker `kebnekaise:d<n>`). Replaces the key's own
+    /// function (factory: Win+<n>).
     Arm {
         /// D1..D4.
         key: String,
         #[arg(long)]
         dry_run: bool,
+        #[command(flatten)]
+        hw: HwArgs,
+    },
+    /// Print display-key presses for a while. Sends nothing; other key
+    /// events are counted, never shown.
+    Listen {
+        /// How long to listen, in seconds.
+        #[arg(long, default_value_t = 20)]
+        seconds: u64,
+        #[command(flatten)]
+        hw: HwArgs,
     },
 }
 
@@ -116,12 +128,6 @@ pub enum ProfileCommand {
         #[command(flatten)]
         hw: HwArgs,
     },
-}
-
-fn not_approved(what: &str) -> CliResult {
-    eprintln!("error: {what} may not write to the keyboard yet.");
-    eprintln!("It is waiting for its first hardware test. Add --dry-run to see the packets.");
-    Ok(ExitCode::from(4))
 }
 
 fn print_steps(steps: &[PlanStep]) {
@@ -200,10 +206,11 @@ pub fn run_key(command: KeyCommand) -> CliResult {
             print_steps(&steps);
             Ok(ExitCode::SUCCESS)
         }
-        KeyCommand::Arm { key, dry_run } => {
+        KeyCommand::Listen { seconds, hw } => listen_dkeys(seconds, &hw),
+        KeyCommand::Arm { key, dry_run, hw } => {
             let k: DKey = key.parse()?;
             if !dry_run {
-                return not_approved("`key arm`");
+                return arm_dkey(k, &hw);
             }
             print_steps(&[
                 one(Packet::action_slot(k), format!("{k}: select action slot")),
@@ -413,7 +420,9 @@ fn apply_profile(p: &Profile, checked: &Checked, hw: &HwArgs) -> CliResult {
         missing = remap_all(&mut keyboard, &report, &checked.remaps)?;
     }
     if !checked.dkeys.is_empty() {
-        println!("Display keys: not sent (display-key actions are not approved for hardware yet).");
+        println!(
+            "Display keys: not sent by `profile apply` yet; arm them with `kebnekaise key arm`."
+        );
     }
     if p.pictures.is_some() {
         println!("Pictures are uploaded separately with `kebnekaise picture`.");
@@ -423,6 +432,78 @@ fn apply_profile(p: &Profile, checked: &Checked, hw: &HwArgs) -> CliResult {
         return Ok(ExitCode::from(1));
     }
     println!("Done.");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `key arm` for real: slot select, then the marker text.
+fn arm_dkey(key: DKey, hw: &HwArgs) -> CliResult {
+    let (transport, report) = match connect(hw)? {
+        Ok(c) => c,
+        Err(code) => return Ok(code),
+    };
+    let packets = [
+        Packet::action_slot(key),
+        Packet::action_text(StoredKind::Url, &ActionText::marker(key)),
+    ];
+    println!(
+        "Firmware {}, profile {}: arming {key}.",
+        report.firmware.version,
+        active_profile(&report)
+    );
+    let mut keyboard = Keyboard::for_actions(transport).with_query_options(query_options(hw));
+    let seen = keyboard.store_action(&packets, report.write_gate, Duration::from_millis(500))?;
+    let mut events = 0;
+    for (packet, replies) in packets.iter().zip(&seen) {
+        println!("  sent     {}", hex(trimmed(packet.as_bytes())));
+        events += replies.iter().filter(|p| p[0] == 0x01).count();
+        let others: Vec<_> = replies.iter().filter(|p| p[0] != 0x01).collect();
+        if others.is_empty() {
+            println!("  (no answer within 500 ms)");
+        }
+        for p in others {
+            println!("  received {}", hex(trimmed(p)));
+        }
+    }
+    if events > 0 {
+        println!("  ({events} key event report(s) not shown)");
+    }
+    println!("Now run `kebnekaise key listen` and press {key}.");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `key listen`: prints display-key presses only.
+fn listen_dkeys(seconds: u64, hw: &HwArgs) -> CliResult {
+    let (transport, report) = match connect(hw)? {
+        Ok(c) => c,
+        Err(code) => return Ok(code),
+    };
+    println!(
+        "Firmware {}, profile {}. Listening for {seconds} s: press D1..D4.",
+        report.firmware.version,
+        active_profile(&report)
+    );
+    let mut keyboard = Keyboard::new(transport).with_query_options(query_options(hw));
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    let (mut presses, mut other) = (0, 0);
+    let mut last: Vec<DKey> = Vec::new();
+    while std::time::Instant::now() < deadline {
+        for p in keyboard.listen(Duration::from_millis(200))? {
+            let keys = DKey::pressed_in(&p);
+            if p[0] == 0x01 && (!keys.is_empty() || !last.is_empty()) && keys != last {
+                if keys.is_empty() {
+                    println!("  released");
+                } else {
+                    let names: Vec<_> = keys.iter().map(|k| k.to_string()).collect();
+                    println!("  pressed  {}", names.join(" + "));
+                    presses += 1;
+                }
+                last = keys;
+            } else {
+                other += 1;
+            }
+        }
+    }
+    println!("Done: {presses} display-key press(es), {other} other report(s) not shown.");
     Ok(ExitCode::SUCCESS)
 }
 
