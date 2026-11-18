@@ -34,6 +34,8 @@ const SPACE: u16 = 57;
 
 /// Pause between two keys of typed text, so slow applications keep up.
 const TYPE_PAUSE_MS: u32 = 8;
+/// Pause between a dead key and the space after it.
+const DEAD_PAUSE_MS: u32 = 40;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Level {
@@ -302,6 +304,9 @@ pub fn type_text(layout: HostLayout, text: &str) -> Result<Vec<Event>, String> {
             out.push(Event::Up(m));
         }
         if st.dead {
+            // Give the desktop time to register the dead key before the
+            // space that completes it.
+            out.push(Event::SleepMs(DEAD_PAUSE_MS));
             out.push(Event::Down(SPACE));
             out.push(Event::Up(SPACE));
         }
@@ -398,6 +403,7 @@ mod tests {
                 Down(27),
                 Up(27),
                 Up(ALTGR),
+                SleepMs(DEAD_PAUSE_MS),
                 Down(SPACE),
                 Up(SPACE),
                 SleepMs(TYPE_PAUSE_MS)
