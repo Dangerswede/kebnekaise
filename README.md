@@ -63,6 +63,9 @@ kebnekaise profile check work.toml
 kebnekaise profile apply work.toml --dry-run
 kebnekaise profile apply work.toml
 kebnekaise profile switch 2                # make keyboard profile 2 active
+kebnekaise key arm D1                      # D1 reports presses, no factory shortcut
+kebnekaise key listen                      # show D1..D4 presses
+kebnekaise agent work.toml                 # run the [dkeys] actions (docs/AGENT.md)
 ```
 
 `info` sends only three documented read commands (`11 12`, `11 14`, `11 00`).
@@ -106,6 +109,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
   fill the gaps.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): language and architecture.
 - [docs/PROFILES.md](docs/PROFILES.md): the profile file format (phase 4).
+- [docs/AGENT.md](docs/AGENT.md): the agent that runs display-key actions and macros.
 
 ## Roadmap
 
@@ -115,7 +119,7 @@ Camp first (including the tray icon and the `BaseCampService` service).
 | 1 | Read-only CLI: find the device, list HID interfaces, firmware, layout, attached modules, active profile. udev rule for Linux. (Windows and Linux verified) |
 | 2 | RGB: static colour, brightness, per-key colours, built-in effects (verified on Windows and Linux) |
 | 3 | Display keys and dial screen: upload your own pictures (verified on Windows and Linux) |
-| 4 | Profiles and key bindings: key remaps, display-key actions, macros (run on the computer), profile files (remaps and profile apply verified on Windows and Linux; display-key actions and agent next) |
+| 4 | Profiles and key bindings: key remaps, display-key actions, macros (run on the computer), profile files, `kebnekaise agent` (remaps, profile apply and display-key arming verified; agent built, hardware test next) |
 | 5 | GUI or tray app, per-application profile switching, Home Assistant |
 
 ## Safety

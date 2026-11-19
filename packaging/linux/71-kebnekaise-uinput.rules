@@ -1,0 +1,4 @@
+# Kebnekaise agent: lets the logged-in user create a virtual keyboard
+# (/dev/uinput) for display-key key actions and macros. Only needed for
+# `action = "keys"` and `action = "macro"`.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

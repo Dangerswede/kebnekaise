@@ -30,7 +30,7 @@ use crate::{hid_api, print_conflicts, CliResult};
 pub struct HwArgs {
     /// Command interface to open, as printed by `list`.
     #[arg(long, value_name = "PATH")]
-    device: Option<String>,
+    pub(crate) device: Option<String>,
     /// Write even on untested firmware.
     #[arg(long)]
     force: bool,
@@ -224,12 +224,12 @@ pub fn run_key(command: KeyCommand) -> CliResult {
     }
 }
 
-type Hw = TracingTransport<HidTransport>;
+pub(crate) type Hw = TracingTransport<HidTransport>;
 
 /// Finds the keyboard, checks for other programs, reads the report and the
 /// firmware gate. `Err(code)` means stop with that exit code (the reason is
 /// already printed); nothing has been written then.
-fn connect(
+pub(crate) fn connect(
     hw: &HwArgs,
 ) -> Result<Result<(Hw, DeviceReport), ExitCode>, Box<dyn std::error::Error>> {
     let api = hid_api()?;
@@ -270,7 +270,7 @@ fn connect(
     Ok(Ok((keyboard.into_transport(), report)))
 }
 
-fn query_options(hw: &HwArgs) -> QueryOptions {
+pub(crate) fn query_options(hw: &HwArgs) -> QueryOptions {
     QueryOptions {
         timeout: Duration::from_millis(hw.timeout_ms),
         attempts: 3,
@@ -320,7 +320,7 @@ fn remap_all(
     Ok(missing)
 }
 
-fn active_profile(report: &DeviceReport) -> String {
+pub(crate) fn active_profile(report: &DeviceReport) -> String {
     report
         .firmware
         .active_profile

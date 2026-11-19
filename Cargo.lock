@@ -318,6 +318,7 @@ dependencies = [
  "everest-core",
  "everest-hid",
  "everest-proto",
+ "libc",
  "serde",
  "serde_json",
 ]

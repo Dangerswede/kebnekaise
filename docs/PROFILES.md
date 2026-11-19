@@ -8,8 +8,9 @@ Windows: TOML, UTF-8, paths relative to the file.
 
 Status (phase 4): `kebnekaise profile template|check|show|apply` work.
 `profile apply` writes `[lighting]` and `[remap]` to the keyboard;
-display-key markers are not sent yet, and display-key actions and macros
-need `kebnekaise agent`, which is not built yet.
+display-key markers are not sent yet (arm the keys with `kebnekaise key
+arm`). `kebnekaise agent <file>` runs the display-key actions and macros
+(see `AGENT.md`).
 
 ## Commands
 
@@ -66,13 +67,14 @@ press; the agent on the computer runs the action.
 
 ### `[macros.<name>]` (optional)
 
-Played on the computer by the agent (Windows `SendInput`, Linux `uinput`).
+Played on the computer by the agent through a virtual keyboard (Linux
+`uinput`; Windows not yet).
 
 ```toml
 [macros.greeting]
 repeat = 1                       # 1..100
 steps = [
-  { text = "Hej!" },             # type text, any Unicode
+  { text = "Hej!" },             # type text (characters on the layout)
   { delay_ms = 100 },            # wait, max 60000
   { keys = "enter" },            # press and release a combination
   { down = "shift" },            # hold ...
@@ -86,6 +88,10 @@ Key names for `keys`, `down`, `up`: one character, `f1`..`f24`, or `ctrl`,
 `delete`, `insert`, `home`, `end`, `pgup`, `pgdn`, `up`, `down`, `left`,
 `right`, `capslock`, `numlock`, `scrolllock`, `prtsc`, `pause`, `menu`,
 `mute`, `volup`, `voldown`, `play`, `next`, `prev`, `stop`, joined with `+`.
+
+`text` can only contain characters that the computer's keyboard layout has
+a key for. The agent's `--layout` option (default `se`) chooses the layout.
+The agent checks this when it starts.
 
 ## Rules
 
