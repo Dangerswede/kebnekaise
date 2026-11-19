@@ -24,6 +24,9 @@ pub enum Event {
 pub enum HostLayout {
     /// Swedish / Finnish (Nordic ISO).
     Se,
+    /// Swedish without dead keys (KDE: "Swedish (no dead keys)"):
+    /// ´ ` ¨ ^ ~ come out at once, no space needed.
+    SeNodeadkeys,
     /// US English.
     Us,
 }
@@ -85,6 +88,10 @@ fn digit_key(d: char) -> u16 {
 }
 
 fn stroke(layout: HostLayout, c: char) -> Option<Stroke> {
+    if layout == HostLayout::SeNodeadkeys {
+        // Same keys as `se`; the dead keys type their character directly.
+        return stroke(HostLayout::Se, c).map(|st| Stroke { dead: false, ..st });
+    }
     use Level::*;
     if c.is_ascii_lowercase() {
         return Some(s(LETTERS[(c as u8 - b'a') as usize], Plain));
@@ -102,7 +109,7 @@ fn stroke(layout: HostLayout, c: char) -> Option<Stroke> {
         _ => {}
     }
     match layout {
-        HostLayout::Se => Some(match c {
+        HostLayout::Se | HostLayout::SeNodeadkeys => Some(match c {
             '!' => s(2, Shift),
             '"' => s(3, Shift),
             '#' => s(4, Shift),
@@ -409,13 +416,27 @@ mod tests {
                 SleepMs(TYPE_PAUSE_MS)
             ]
         );
+        assert_eq!(
+            type_text(HostLayout::SeNodeadkeys, "~").unwrap(),
+            vec![
+                Down(ALTGR),
+                Down(27),
+                Up(27),
+                Up(ALTGR),
+                SleepMs(TYPE_PAUSE_MS)
+            ]
+        );
+        assert_eq!(
+            chord(HostLayout::SeNodeadkeys, "ctrl+^").unwrap(),
+            vec![29, 42, 27]
+        );
         assert!(type_text(HostLayout::Se, "é").is_err());
         assert!(type_text(HostLayout::Us, "å").is_err());
     }
 
     #[test]
     fn every_printable_ascii_is_typeable() {
-        for layout in [HostLayout::Se, HostLayout::Us] {
+        for layout in [HostLayout::Se, HostLayout::SeNodeadkeys, HostLayout::Us] {
             for b in 0x20u8..0x7f {
                 let c = b as char;
                 assert!(stroke(layout, c).is_some(), "{layout:?} {c:?}");
@@ -442,7 +463,7 @@ mod tests {
     #[test]
     fn codes_cover_everything() {
         let all = all_codes();
-        for layout in [HostLayout::Se, HostLayout::Us] {
+        for layout in [HostLayout::Se, HostLayout::SeNodeadkeys, HostLayout::Us] {
             for b in 0x20u8..0x7f {
                 let st = stroke(layout, b as char).unwrap();
                 assert!(all.contains(&st.code));

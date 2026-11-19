@@ -43,6 +43,11 @@ refuses to run if a character has no key on that layout. Both tables
 include all printable ASCII. `se` also has `åäöÅÄÖ§½¤£€´¨`. Dead keys
 (´ ¨ ^ ~ and the backtick) are typed as the key and then a space.
 
+Some Linux applications ignore dead keys altogether, also when typed by
+hand. If ~ does not work by hand either, choose the layout "Swedish (no
+dead keys)" in the desktop settings and run the agent with
+`--layout se-nodeadkeys`.
+
 ## Linux: access to /dev/uinput
 
 `keys` and `macro` need write access to `/dev/uinput`. Some systems
